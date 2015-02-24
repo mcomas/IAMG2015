@@ -1,16 +1,17 @@
 \documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
 
-\title{}
-\author{}
+\title{Finite mixtures of distributions: compositional model-based clustering}
+\author{Marc Comas-Cufí \and Antonella Buccianti \and Glòria Mateu-Figueras \and Josep-Antoni Martín-Fernández}
 
 \begin{document}
 \maketitle
 
-Finite mixtures of distributions are the most common distributions used to model different sources of variability within a data set. Because of this, finite mixtures of distributions are the most suitable models to do model-based clustering. Although the advantages of using finite mixtures models, they exhibit some restrictions when the different sources of variability have different nature. To deal with this restriction, different approaches have been proposed to combine different components into one component which models a single source of variability. The result is that the full data set is modelled by a finite mixture of finite mixtures distributions.
+Finite mixtures of distributions are the most common technique to model different sources of variability within a data set. When these models are used to make groups of samples the technique is known as  model-based clustering. In geology, cluster analysis is typically applied for geochemical exploration and mapping. Although the numerous advantages of using finite mixtures models, they exhibit some limitations when the sources of variability have very different features. To deal with these difficulties, one considers that each cluster is a single source of variability. In consequence, a cluster can be formed by the combination of different mixture components. In other words, the whole data set is composed by clusters, which are a finite mixture of distributions.
 
-In this presentation, we use a real data set coming from (DATA SET'S AREA) to introduce and compare the commented approaches. In this work, we always take into an account sample space of our data .i.e the Simplex. We analyse our data set by using finite mixture of Gaussian distributions. Then, we consider different approaches to combine those components which are more likely to form a single group, and therefore, to generate a single source of variability. To compare the groups obtained by the different approaches, we propose a graphical tool to visualise the similarity between the obtained clusters.
+In this contribution, we use a real data set coming from geochemistry to introduce and compare different approaches and illustrate their applications. Because of the nature of our data set, we apply compositional analysis techniques to take into account the geometry of the sample space. In particular, we model the data set by using finite mixture of Gaussian distributions on the simplex defined on log-ratio coordinates. When combining mixture components to construct the clusters, different approaches based on the posterior probabilities are evaluated. One of these approaches is a novel technique based on log-ratios to introduce a compositional analysis for the posterior probabilities. Moreover, to compare the different clustering obtained, we present a new graphical tool to visualise the similarity between the resulting groups. 
 
-The analysed data set consist of (DATA SET EXPLANATION).
+The data set used to test the methodology is given by the chemistry of the groundwaters of more than 4000 samples collected in Tuscany region (central Italy). Hydrochemical facies is a term used to denote the diagnostic chemical aspect of groundwater solutions occurring in hydrologic systems. The facies reflect the effects of chemical processes occurring between the minerals within the lithologic framework and the groundwater. The flow patterns modify the facies and control their distribution. The distribution of these facies, as well as the relations between rock types and groundwater composition are commonly displayed in trilinear diagrams, as for example the Piper plot. The evaluation of the facies is thus only performed on a descriptive way. A statistical alternative is here proposed, based on the approach of the finite mixtures of distributions.
 
 \end{document}
 
