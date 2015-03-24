@@ -4,6 +4,19 @@ load(sprintf('%s/data/data_with_selected_variables_and_map.RData', ROOT))
 library(stringr)
 ```
 
+Cleaning the dataset
+====================
+
+#### Some facies are not well coded
+
+* Before:
+
+```{r}
+table(data$Facies)
+```
+
+* Now:
+
 ```{r}
 data$Facies[str_sub(data$Facies, 1, 6) == 'Ca-HCO'] = 'Ca-HCO3'
 data$Facies = as.character(data$Facies)
