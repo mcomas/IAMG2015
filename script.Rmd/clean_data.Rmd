@@ -2,6 +2,7 @@
 if(!exists('ROOT')) ROOT = getwd()
 load(sprintf('%s/data/data_with_selected_variables_and_map.RData', ROOT))
 library(stringr)
+options(width=100)
 ```
 
 Cleaning the dataset
@@ -11,17 +12,19 @@ Cleaning the dataset
 
 * Before:
 
-```{r}
+```{r, comment=""}
 table(data$Facies)
 ```
 
 * Now:
 
-```{r}
+```{r, comment=""}
 data$Facies[str_sub(data$Facies, 1, 6) == 'Ca-HCO'] = 'Ca-HCO3'
 data$Facies = as.character(data$Facies)
 table(data$Facies)
 ```
+
+#### Facies are rebuild from percentage
 
 ```{r}
 names(data)[match(c("Ca..", "Mg..", "Na.K.."), names(data))] = (facie_1 <- c('Ca', 'Mg', 'Na'))
@@ -33,15 +36,20 @@ facie.a = apply(data[,facie_2], 1, function(r) facie_2[which.max(r)])
 data$Facies2 = sprintf("%s-%s", facie.c, facie.a)
 ```
 
-```{r}
-## There are facies which are not as they are supposed to be 
-## very few, maybe a manual error?
-## maybe the source from where Facies2 was calculated was not correct, and Facie is the correct one.
-## Last options, we can remove this observations.
-mean(data$Facies != data$Facies2)  # 0.6% of available data
-## They are distributed as follows
-table(data$Facies, data$Facies2)
+There are facies which are not as they are supposed to be. 
+
+```{r, comment=""}
+mean(data$Facies != data$Facies2)
 ```
+
+They are distributed as follows:
+
+```{r, comment=""}
+table('Facies' = data$Facies, 'Facies2' = data$Facies2)
+```
+
+* The disagreement is minimum, maybe a manual error when coding Facies? 
+* Maybe, the percentages from where Facies2 was calculated were not correct?
 
 ```{r, include=FALSE}
 save(map, data, file=sprintf('%s/data/clean_data.RData', ROOT))

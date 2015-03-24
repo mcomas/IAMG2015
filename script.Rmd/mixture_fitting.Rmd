@@ -1,0 +1,56 @@
+````{r, include=FALSE}
+if(!exists('ROOT')) ROOT = getwd()
+load(sprintf('%s/data/data-trans.RData', ROOT))
+load(sprintf('%s/data/clean_data.RData', ROOT))
+library(mclust)
+library(dplyr)
+library(ggplot2)
+library(ggmap)
+library(reshape2)
+library(gridExtra)
+```
+
+## Mixture fitting
+
+The mixtures fitting were obtained by setting `Mclust` parameters by default and using the ilr coordinates.
+
+#### (Ca,Mg,Na)-composition
+
+````{r, echo=FALSE, fig.width=10, fig.height=10, comment=" "}
+summary(m1 <- Mclust(df1.ilr %>% select(coord.1, coord.2)))
+
+par(mfrow=c(2,2))
+plot(m1)
+par(mfrow=c(1,1))
+```
+
+#### (SO4,HCO3,Cl)-composition
+
+````{r, echo=FALSE, fig.width=10, fig.height=10, comment=" "}
+summary(m2 <- Mclust(df2.ilr %>% select(coord.1, coord.2)))
+par(mfrow=c(2,2))
+plot(m2)
+par(mfrow=c(1,1))
+```
+
+### Clusters on the map
+
+```{r, fig.width=10, fig.height=5, warning=FALSE, echo=FALSE, comment=""}
+df1.coda$clust = as.factor(m1$classification)
+df2.coda$clust = as.factor(m2$classification)
+df = bind_rows(
+  df1.coda %>% melt(id.vars = c('x', 'y', 'Facie', 'clust')) %>% mutate(compo = 'Ca-Mg-Na') %>% select(x,y,clust,compo),
+  df2.coda %>% melt(id.vars = c('x', 'y', 'Facie', 'clust')) %>% mutate(compo = 'SO4-HCO3-Cl') %>% select(x,y,clust,compo))
+
+grid.arrange(
+  ggmap(map) + 
+    geom_point(data = df1.coda %>% melt(id.vars = c('x', 'y', 'clust')), 
+               aes(x = x, y = y, col=clust), size=3,  alpha = .5) +
+    xlab(NULL) + ylab(NULL) +
+    theme(axis.ticks = element_blank(), axis.text = element_blank()),
+  ggmap(map) + 
+    geom_point(data = df2.coda %>% melt(id.vars = c('x', 'y', 'clust')), 
+              aes(x = x, y = y, col=clust), size=3,  alpha = .5) +
+    xlab(NULL) + ylab(NULL) +
+    theme(axis.ticks = element_blank(), axis.text = element_blank()), ncol=2)
+```

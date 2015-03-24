@@ -8,32 +8,24 @@ library(ggtern)
 library(stringr)
 library(mixpack)
 library(flexmix)
+library(gridExtra)
 if(!exists('ROOT')) ROOT = getwd()
 load(sprintf('%s/data/clean_data.RData', ROOT))
-```
 
-Descriptives
-============
-
-* [(Ca,Mg,Na)-composition](#comp1)
-  * [Original composition](#comp1_tern)
-  * [ILR representation](#comp1_ilr)
-  * [Plotting the Facies into a map](#comp1_facie)
-  * [Plotting the CLR transform coordinates into a map](#comp1_clr)
-* [(SO4,HCO3,Cl)-composition](#comp2)
-  * [Original composition](#comp2_tern)
-  * [ILR representation](#comp2_ilr)
-  * [Plotting the Facies into a map](#comp2_facie)
-  * [Plotting the CLR transform coordinates into a map](#comp2_clr)
-
-## <a name="comp1" />(Ca,Mg,Na)-composition
-
-```{r}
+##############
+### Preparing data
 df1.coda = data %>% 
   mutate(
-    'Facie' = sapply(str_split(data$Facies, '-'), function(v) v[1])
+    'Facie' = factor(sapply(str_split(data$Facies, '-'), function(v) v[1]), levels=c('Ca', 'Mg', 'Na'))
     ) %>%
   select(x, y, Facie, Ca, Mg, Na)
+
+df2.coda <- data %>%
+  mutate(
+    'Facie' = factor(sapply(str_split(data$Facies, '-'), function(v) v[2]), levels=c('SO4', 'HCO3', 'Cl'))
+    ) %>% 
+  select(x, y, Facie, SO4, HCO3, Cl)
+
 df1.clr = df1.coda %>% 
   mutate(
     'clrCa' = log(Ca/(Ca*Mg*Na)^(1/3)),
@@ -41,8 +33,70 @@ df1.clr = df1.coda %>%
     'clrNa' = log(Na/(Ca*Mg*Na)^(1/3))
     ) %>% 
   select(x, y, Facie, clrCa, clrMg, clrNa)
+df2.clr = df2.coda %>% 
+  mutate(
+    'clrSO4'  = log(SO4/(SO4*HCO3*Cl)^(1/3)),
+    'clrHCO3' = log(HCO3/(SO4*HCO3*Cl)^(1/3)),
+    'clrCl'   = log(Cl/(SO4*HCO3*Cl)^(1/3))
+    ) %>% 
+  select(x, y, Facie, clrSO4, clrHCO3, clrCl)
+
 df1.ilr = ilr_coordinates(df1.coda %>% select(Ca, Mg, Na) )  %>% cbind(df1.coda %>% select(Facie))
-## Variation array
+df2.ilr = ilr_coordinates(df2.coda %>% select(SO4, HCO3, Cl))  %>% cbind(df2.coda %>% select(Facie))
+
+save(df1.coda, df2.coda, df1.clr, df2.clr, df1.ilr, df2.ilr, file=sprintf('%s/data/data-trans.RData', ROOT))
+```
+
+
+Descriptives
+============
+
+* [Facies on the map](#facies_map)
+* [Facies on a ternary diagram](#coda_tern)
+* [Variation array](#variation_array)
+* [ILR-plot](#ilr_plot)
+
+### <a name="facies_map"> Facies on the map
+
+```{r, fig.width=10, fig.height=5, warning=FALSE, echo=FALSE, comment=""}
+df = bind_rows(
+  df1.coda %>% melt(id.vars = c('x', 'y', 'Facie')) %>% mutate(compo = 'Ca-Mg-Na') %>% select(x,y,Facie,compo),
+  df2.coda %>% melt(id.vars = c('x', 'y', 'Facie')) %>% mutate(compo = 'SO4-HCO3-Cl') %>% select(x,y,Facie,compo))
+
+grid.arrange(
+  ggmap(map) + 
+    geom_point(data = df1.coda %>% melt(id.vars = c('x', 'y', 'Facie')), 
+               aes(x = x, y = y, col=Facie), size=3,  alpha = .5) +
+    xlab(NULL) + ylab(NULL) +
+    theme(axis.ticks = element_blank(), axis.text = element_blank()),
+  ggmap(map) + 
+    geom_point(data = df2.coda %>% melt(id.vars = c('x', 'y', 'Facie')), 
+              aes(x = x, y = y, col=Facie), size=3,  alpha = .5) +
+    xlab(NULL) + ylab(NULL) +
+    theme(axis.ticks = element_blank(), axis.text = element_blank()), ncol=2)
+```
+
+### <a name="coda_tern"> Facies on a ternary diagram
+
+#### (Ca,Mg,Na)-composition
+
+```{r, fig.width=6, fig.height=5, echo=FALSE}
+ggtern(data = df1.coda, aes(x=Ca, Mg, Na)) + 
+  geom_point(aes(col=Facie), alpha=0.25) + geom_density2d() + theme_classic()
+```
+
+#### (SO4,HCO3,Cl)-composition
+
+```{r, fig.width=6, fig.height=5, echo=FALSE}
+ggtern(data = df2.coda, aes(x=SO4, HCO3, Cl)) + 
+  geom_point(aes(col=Facie), alpha=0.25) + geom_density2d() + theme_classic()
+```
+
+### <a name="variation_array"> Variation array
+
+#### (Ca,Mg,Na)-composition
+
+```{r, echo=FALSE, comment=""}
 df1.coda %>% select(Ca, Mg, Na) %>% 
   melt(id.vars = c('Ca', 'Mg', 'Na'), measure.vars = c('Ca', 'Mg', 'Na'), 
        value.name = 'val.row', variable.name = 'var.row') %>%
@@ -51,58 +105,12 @@ df1.coda %>% select(Ca, Mg, Na) %>%
   group_by(var.row, var.col) %>% summarize(
   'm' = mean(log(val.row/val.col)),
   'v' = var(log(val.row/val.col)),
-  'l' = sprintf("  %5.2f (%5.2f)", m, v)) %>% dcast(var.row~var.col, value.var = 'l')
+  'l' = sprintf("  %5.3f (%5.3f)", m, v)) %>% dcast(var.row~var.col, value.var = 'l')
 ```
 
-### <a name="comp1_tern" /> Original composition
+#### (SO4,HCO3,Cl)-composition
 
-```{r}
-ggtern(data = df1.coda, aes(x=Ca, Mg, Na)) + geom_point(aes(col=Facie), alpha=0.25) + geom_density2d()
-```
-
-### <a name="comp1_ilr" /> ILR representation
-
-```{r, fig.width=7, fig.height=7}
-ggplot( data = df1.ilr ) +
-  geom_point(aes(x=coord.1, y=coord.2, col=Facie), alpha=0.5) + geom_density2d(aes(x=coord.1, y=coord.2))
-```
-
-### <a name="comp1_facie" /> Plotting the Facies into a map
-
-```{r, fig.width=14, fig.height=5, warning=FALSE}
-df1 = df1.clr %>% melt(id.vars = c('x', 'y', 'Facie'))
-ggmap(map) + 
-  geom_point(data = df1, aes(x = x, y = y, col=Facie), size=3,  alpha = .5) +
-  xlab(NULL) + ylab(NULL) + facet_wrap(~variable, nrow=1) +
-  theme(axis.ticks = element_blank(), axis.text = element_blank())
-```
-
-### <a name="comp1_clr" /> Plotting the CLR transform coordinates into a map
-
-```{r, fig.width=14, fig.height=5, warning=FALSE}
-ggmap(map) + 
-  geom_point(data = df1, aes(x = x, y = y, color=value), size=3,  alpha = .5) +
-  xlab(NULL) + ylab(NULL) + facet_wrap(~variable, nrow=1) +
-  theme(axis.ticks = element_blank(), axis.text = element_blank())
-```
-
-## <a name="comp2" />(SO4,HCO3,Cl)-composition
-
-```{r}
-df2.coda <- data %>%
-  mutate(
-    'Facie' = sapply(str_split(data$Facies, '-'), function(v) v[2])
-    ) %>% 
-  select(x, y, Facie, SO4, HCO3, Cl)
-df2.clr = df2.coda %>% 
-  mutate(
-    'clrSO4' = log(SO4/(SO4*HCO3*Cl)^(1/3)),
-    'clrHCO3' = log(HCO3/(SO4*HCO3*Cl)^(1/3)),
-    'clrCl' = log(Cl/(SO4*HCO3*Cl)^(1/3))
-    ) %>% 
-  select(x, y, Facie, clrSO4, clrHCO3, clrCl)
-df2.ilr = ilr_coordinates(df2.coda %>% select(SO4, HCO3, Cl))  %>% cbind(df2.coda %>% select(Facie))
-## Variation array
+```{r, echo=FALSE, comment=""}
 df2.coda %>% select(SO4, HCO3, Cl) %>% 
   melt(id.vars = c('SO4', 'HCO3', 'Cl'), measure.vars = c('SO4', 'HCO3', 'Cl'), 
        value.name = 'val.row', variable.name = 'var.row') %>%
@@ -111,84 +119,23 @@ df2.coda %>% select(SO4, HCO3, Cl) %>%
   group_by(var.row, var.col) %>% summarize(
   'm' = mean(log(val.row/val.col)),
   'v' = var(log(val.row/val.col)),
-  'l' = sprintf("  %5.2f (%5.2f)", m, v)) %>% dcast(var.row~var.col, value.var = 'l')
+  'l' = sprintf("  %5.3f (%5.3f)", m, v)) %>% dcast(var.row~var.col, value.var = 'l')
 ```
 
-### <a name="comp2_tern" /> Original composition
+### <a name="ilr_plot"> ILR-plot
 
-```{r}
-ggtern(data = df2.coda, aes(x=SO4, HCO3, Cl)) + geom_point(aes(col=Facie), alpha=0.25) + geom_density2d()
+Basis:
+
+```{r, echo=FALSE, comment=""}
+ilr_basis(D=3)
 ```
 
-### <a name="comp2_ilr" /> ILR representation
-
-```{r, fig.width=7, fig.height=7}
-ggplot( data = df2.ilr ) +
-  geom_point(aes(x=coord.1, y=coord.2, col=Facie), alpha=0.5) + geom_density2d(aes(x=coord.1, y=coord.2))
-```
-
-### <a name="comp2_facie" /> Plotting the Facies into a map
-
-```{r, fig.width=14, fig.height=5, warning=FALSE}
-df2 = df2.clr %>% melt(id.vars = c('x', 'y', 'Facie'))
-ggmap(map) + 
-  geom_point(data = df2, aes(x = x, y = y, col=Facie), size=3,  alpha = .5) +
-  xlab(NULL) + ylab(NULL) + facet_wrap(~variable, nrow=1) +
-  theme(axis.ticks = element_blank(), axis.text = element_blank())
-```
-
-### <a name="comp2_clr" /> Plotting the CLR transform coordinates into a map
-
-```{r, fig.width=14, fig.height=5, warning=FALSE}
-ggmap(map) + 
-  geom_point(data = df2, aes(x = x, y = y, color=value), size=3,  alpha = .5) +
-  xlab(NULL) + ylab(NULL) + facet_wrap(~variable, nrow=1) +
-  theme(axis.ticks = element_blank(), axis.text = element_blank())
-```
-
-
-## Different approaches
-
-### Mixture regression
-
-```{r}
-set.seed(1024)
-```
-
-#### (Ca,Mg,Na)-composition
-
-```{r}
-summary( m1 <- flexmix(coord.1~coord.2, data = df1.ilr, k = 10) )
-df1.reg = df1.coda %>% cbind('cluster' = as.factor(m1@cluster))
-```
-
-```{r}
-ggtern(data = df1.reg, aes(x=Ca, Mg, Na)) + geom_point(aes(col=cluster))
-```
-
-```{r, fig.width=14, fig.height=5, warning=FALSE}
-df1 = df1.reg %>% melt(id.vars = c('x', 'y', 'Facie', 'cluster'))
-ggmap(map) + 
-  geom_point(data = df1, aes(x = x, y = y, col=cluster), size=3,  alpha = .5) +
-  xlab(NULL) + ylab(NULL) + facet_wrap(~variable, nrow=1) +
-  theme(axis.ticks = element_blank(), axis.text = element_blank())
-```
-
-#### (SO4,HCO3,Cl)-composition
-
-```{r}
-summary( m2 <- flexmix(coord.1~coord.2, data = df2.ilr, k = 10) )
-df2.reg = df2.coda %>% cbind('cluster' = as.factor(m2@cluster))
-```
-
-```{r}
-ggtern(data = df2.reg, aes(x=SO4, HCO3, Cl)) + geom_point(aes(col=cluster))
-```
-
-```{r, fig.width=14, fig.height=5, warning=FALSE}
-df2 = df2.reg %>% melt(id.vars = c('x', 'y', 'Facie', 'cluster'))
-ggmap(map) + 
-  geom_point(data = df2, aes(x = x, y = y, col=cluster), size=3,  alpha = .5) +
-  xlab(NULL) + ylab(NULL) + facet_wrap(~variable, nrow=1) +
-  theme(axis.ticks = element_blank(), axis.text = element_blank())
+```{r, fig.width=12, fig.height=5, echo=FALSE, comment=""}
+grid.arrange(
+  ggplot( data = df1.ilr ) +
+    geom_point(aes(x=coord.1, y=coord.2, col=Facie), alpha=0.5) + 
+    geom_density2d(aes(x=coord.1, y=coord.2)) + theme_classic(),
+  ggplot( data = df2.ilr ) +
+    geom_point(aes(x=coord.1, y=coord.2, col=Facie), alpha=0.5) + 
+    geom_density2d(aes(x=coord.1, y=coord.2)) + theme_classic(), ncol=2 )
 ```
