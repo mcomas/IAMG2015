@@ -20,7 +20,10 @@ The mixtures fitting were obtained by setting `Mclust` parameters by default and
 summary(m1 <- Mclust(df1.ilr %>% select(coord.1, coord.2)))
 
 par(mfrow=c(2,2))
-plot(m1)
+plot(m1, what = "BIC")
+plot(m1, what = "classification")
+plot(m1, what = "uncertainty")
+plot(m1, what = "density")
 par(mfrow=c(1,1))
 ```
 
@@ -29,7 +32,10 @@ par(mfrow=c(1,1))
 ````{r, echo=FALSE, fig.width=10, fig.height=10, comment=" "}
 summary(m2 <- Mclust(df2.ilr %>% select(coord.1, coord.2)))
 par(mfrow=c(2,2))
-plot(m2)
+plot(m2, what = "BIC")
+plot(m2, what = "classification")
+plot(m2, what = "uncertainty")
+plot(m2, what = "density")
 par(mfrow=c(1,1))
 ```
 
