@@ -8,6 +8,14 @@ library(ggplot2)
 library(ggmap)
 library(reshape2)
 library(gridExtra)
+if(!exists('SELECTION')) SELECTION = "rep(T, nrow(data))"
+
+selection = eval(parse(text=SELECTION))
+
+df1.ilr = df1.ilr %>% subset(selection)
+df2.ilr = df2.ilr %>% subset(selection)
+df1.coda = df1.coda %>% subset(selection)
+df2.coda = df2.coda %>% subset(selection)
 ```
 
 ## Mixture fitting

@@ -27,8 +27,8 @@ table(data$Facies)
 #### Facies are rebuild from percentage
 
 ```{r}
-names(data)[match(c("Ca..", "Mg..", "Na.K.."), names(data))] = (facie_1 <- c('Ca', 'Mg', 'Na'))
-names(data)[match(c("SO4..", "HCO3..", "Cl."), names(data))] = (facie_2 <- c('SO4', 'HCO3', 'Cl'))
+facie_1 <- c('Ca', 'Mg', 'Na')
+facie_2 <- c('SO4', 'HCO3', 'Cl')
 
 facie.c = apply(data[,facie_1], 1, function(r) facie_1[which.max(r)]) 
 facie.a = apply(data[,facie_2], 1, function(r) facie_2[which.max(r)])
