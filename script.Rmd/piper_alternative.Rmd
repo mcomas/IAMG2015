@@ -1,0 +1,98 @@
+```{r, include=FALSE}
+library(ggplot2)
+library(ggmap)
+library(grid)
+library(dplyr)
+library(reshape2)
+library(ggtern)
+library(stringr)
+library(mixpack)
+library(flexmix)
+library(gridExtra)
+library(ggbiplot)
+if(!exists('ROOT')) ROOT = getwd()
+load(sprintf('%s/data/clean_data.RData', ROOT))
+source(sprintf('%s/R/plot_functions.R', ROOT))
+```
+
+```{r, echo=FALSE}
+df = data %>% mutate(
+  HCO3 = Bicarbonati_mg.L_, 
+  Ca = Calcio_mg.L_, 
+  Cl = Cloruri_mg.L_,
+  Mg = Magnesio_mg.L_, 
+  K = Potassio_mg.L_, 
+  Na = Sodio_mg.L_,
+  SO4 = Solfati_mg.L_) %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>% subset() %>% tbl_df
+
+T1 <- c(HCO3=61.02, Ca=40.078, Cl=35.4527, Mg=24.305, K=39.0983, Na=22.989, SO4=96.06)
+T2 <- c(HCO3=1, Ca=2, Cl=1, Mg=2, K=1, Na=1, SO4=2)
+for(v in names(df)){
+  df[,v] = df[,v] / T1[v] * T2[v]
+}
+```
+
+```{r, echo=FALSE}
+df %>% round(2)
+```
+
+### The piper plot
+
+```{r, echo=FALSE}
+df.cat <- df %>% mutate(
+  total = Ca + Mg + Na + K,
+  Ca = Ca / total * 100,
+  Mg = Mg / total * 100,
+  Na_K = (Na + K) / total * 100) %>% select(Ca, Mg, Na_K)
+```
+
+```{r, echo=FALSE}
+df.ani <- df %>% mutate(
+  total = Cl + SO4 + HCO3,
+  Cl = Cl / total * 100,
+  SO4 = SO4 / total * 100,
+  HCO3 = HCO3 / total * 100) %>% select(Cl, SO4, HCO3)
+```
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+facie = function(.data) names(.data)[apply(.data, 1, which.max)]
+piper_data <- transform_piper_data(Ca=df.cat$Ca, Mg = df.cat$Mg, Cl=df.ani$Cl, SO4 = df.ani$SO4)
+piper_data$facie = sprintf("%s-%s", facie(df.cat), facie(df.ani))
+(meq <- ggplot_piper() + geom_point(data=piper_data, aes(x=x,y=y, col=facie), size=2))
+```
+
+### The clr-biplot
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+alpha = 1
+Xclr = clr_coordinates(X = df)
+Xclr = Xclr %>% subset(complete.cases(Xclr))
+
+s = svd(scale(Xclr, scale=F))
+obs = data.frame(s$u %*% diag(s$d^alpha))
+names(obs) = paste0('Comp.', 1:ncol(obs))
+
+vars = data.frame(t(diag(s$d^(1-alpha) ) %*% t(s$v)))
+names(vars) = names(obs)
+vars$varnames = colnames(Xclr)
+
+x = names(obs)[1]
+y = names(obs)[2]
+  
+plot = ggplot()+ geom_point(data=obs, aes(x=Comp.1, y=Comp.2), alpha=0.2, col='blue')
+
+mxy_obs = max( abs(max(obs[,c(x,y)])), abs(min(obs[,c(x,y)])))
+mxy_vars = max( abs(max(vars[,c(x,y)])), abs(min(vars[,c(x,y)])))
+
+vars = vars %>% mutate(
+  v1 = .7 *  mxy_obs / mxy_vars * (get(x)),
+  v2 = .7 *  mxy_obs / mxy_vars * (get(y)),
+  varnames = sprintf("clr(%s)", varnames))
+
+pca = summary(prcomp(Xclr))$importance
+plot + geom_segment(data=vars, aes(x=0, y=0, xend=v1, yend=v2, text = varnames), 
+                                arrow=arrow(length=unit(0.2,"cm")), 
+                                alpha=0.75, size=1.3, col='red', alpha=0.5) +
+  geom_text(data=vars, aes(label=varnames, x=v1, y=v2), size=8) + theme_bw() + xlab(sprintf('Prin.Comp.1 (%5.2f %%)', pca[2,1]*100)) + ylab(sprintf('Prin.Comp.2 (%5.2f %%)', pca[2,2]*100))
+```
+

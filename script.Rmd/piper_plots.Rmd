@@ -1,0 +1,189 @@
+```{r, include=FALSE}
+library(ggplot2)
+library(ggmap)
+library(grid)
+library(dplyr)
+library(reshape2)
+library(ggtern)
+library(stringr)
+library(mixpack)
+library(flexmix)
+library(gridExtra)
+if(!exists('ROOT')) ROOT = getwd()
+load(sprintf('%s/data/clean_data.RData', ROOT))
+source(sprintf('%s/R/plot_functions.R', ROOT))
+
+df = data %>% mutate(
+  HCO3 = Bicarbonati_mg.L_, 
+  Ca = Calcio_mg.L_, 
+  Cl = Cloruri_mg.L_,
+  Mg = Magnesio_mg.L_, 
+  K = Potassio_mg.L_, 
+  Na = Sodio_mg.L_,
+  SO4 = Solfati_mg.L_) %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>% subset() %>% tbl_df
+```
+
+The piper plot is not coherent under perturbations
+==================================================
+
+Here, we compare the piper plots using Mg/L, mmoL, mEq. We see the representation changes with respect to the units used.
+
+* [Piper plot using Mg/L](#mgl)
+* [Piper plot using mmol](#mmol)
+* [Piper plot using meq](#meq)
+* [Comparing the piper plots](#comparison)
+
+### <a name="mgl" />Piper plot using Mg/L
+
+#### Sample in Mg/L
+
+```{r, echo=FALSE}
+df
+```
+
+#### Cations and anions
+
+* Cations (closured)
+
+```{r, echo=FALSE}
+( df.cat <- df %>% mutate(
+  total = Ca + Mg + Na + K,
+  Ca = Ca / total * 100,
+  Mg = Mg / total * 100,
+  Na_K = (Na + K) / total * 100) %>% select(Ca, Mg, Na_K) ) %>% round(2)
+```
+
+* Anions (closured)
+
+```{r, echo=FALSE}
+( df.ani <- df %>% mutate(
+  total = Cl + SO4 + HCO3,
+  Cl = Cl / total * 100,
+  SO4 = SO4 / total * 100,
+  HCO3 = HCO3 / total * 100) %>% select(Cl, SO4, HCO3) %>% round(2) )
+```
+
+* Piper plot
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+facie = function(.data) names(.data)[apply(.data, 1, which.max)]
+piper_data <- transform_piper_data(Ca=df.cat$Ca, Mg = df.cat$Mg, Cl=df.ani$Cl, SO4 = df.ani$SO4)
+piper_data$facie = sprintf("%s-%s", facie(df.cat), facie(df.ani))
+(mgl <- ggplot_piper() + geom_point(data=piper_data, aes(x=x,y=y, col=facie), size=2))
+```
+
+### <a name="mmol" />Piper plot using mmol
+
+Dividing factor from Mg/L to mmol
+
+```{r, echo=FALSE}
+( conv <- c(HCO3=61.02, Ca=40.078, Cl=35.4527, Mg=24.305, K=39.0983, Na=22.989, SO4=96.06) )
+```
+
+#### Sample in mmol
+
+```{r, echo=FALSE}
+for(v in names(df)){
+  df[,v] = df[,v] / conv[v]
+}
+df %>% round(2)
+```
+
+#### Cations and anions
+
+* Cations (closured)
+
+```{r, echo=FALSE}
+( df.cat <- df %>% mutate(
+  total = Ca + Mg + Na + K,
+  Ca = Ca / total * 100,
+  Mg = Mg / total * 100,
+  Na_K = (Na + K) / total * 100) %>% select(Ca, Mg, Na_K) ) %>% round(2)
+```
+
+* Anions (closured)
+
+```{r, echo=FALSE}
+( df.ani <- df %>% mutate(
+  total = Cl + SO4 + HCO3,
+  Cl = Cl / total * 100,
+  SO4 = SO4 / total * 100,
+  HCO3 = HCO3 / total * 100) %>% select(Cl, SO4, HCO3) %>% round(2) )
+```
+
+* Piper plot
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+facie = function(.data) names(.data)[apply(.data, 1, which.max)]
+piper_data <- transform_piper_data(Ca=df.cat$Ca, Mg = df.cat$Mg, Cl=df.ani$Cl, SO4 = df.ani$SO4)
+piper_data$facie = sprintf("%s-%s", facie(df.cat), facie(df.ani))
+(mmol <- ggplot_piper() + geom_point(data=piper_data, aes(x=x,y=y, col=facie), size=2))
+```
+
+### <a name="meq" />Piper plot using meq
+
+Multiplying factor from mmol to meq
+
+```{r, echo=FALSE}
+( conv <- c(HCO3=1, Ca=2, Cl=1, Mg=2, K=1, Na=1, SO4=2) )
+```
+
+#### Sample in mmol
+
+```{r, echo=FALSE}
+for(v in names(df)){
+  df[,v] = df[,v] * conv[v]
+}
+df %>% round(2)
+```
+
+#### Cations and anions
+
+* Cations (closured)
+
+```{r, echo=FALSE}
+( df.cat <- df %>% mutate(
+  total = Ca + Mg + Na + K,
+  Ca = Ca / total * 100,
+  Mg = Mg / total * 100,
+  Na_K = (Na + K) / total * 100) %>% select(Ca, Mg, Na_K) ) %>% round(2)
+```
+
+* Anions (closured)
+
+```{r, echo=FALSE}
+( df.ani <- df %>% mutate(
+  total = Cl + SO4 + HCO3,
+  Cl = Cl / total * 100,
+  SO4 = SO4 / total * 100,
+  HCO3 = HCO3 / total * 100) %>% select(Cl, SO4, HCO3) %>% round(2) )
+```
+
+* Piper plot
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+facie = function(.data) names(.data)[apply(.data, 1, which.max)]
+piper_data <- transform_piper_data(Ca=df.cat$Ca, Mg = df.cat$Mg, Cl=df.ani$Cl, SO4 = df.ani$SO4)
+piper_data$facie = sprintf("%s-%s", facie(df.cat), facie(df.ani))
+(meq <- ggplot_piper() + geom_point(data=piper_data, aes(x=x,y=y, col=facie), size=2))
+```
+
+### <a name="comparison" />Comparing the piper plots
+
+* Mg/L
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+mgl
+```
+
+* mmol
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+mmol
+```
+
+* meq
+
+```{r, echo=FALSE, fig.width=9, fig.height=9}
+meq
+```
