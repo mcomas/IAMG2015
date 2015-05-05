@@ -103,3 +103,41 @@ ggplot_piper <- function() {
           axis.title.x = element_blank(), axis.title.y = element_blank())
   return(p)
 }
+
+
+ggplot_biplot <- function(X, labels, x=1, y=2, col = NULL, alpha=0, size=2, trans = NULL) {
+  s = svd(scale(X, scale=F))
+  obs = data.frame(s$u %*% diag(s$d^alpha))
+  names(obs) = paste0('Comp.', 1:ncol(obs))
+  
+  vars = data.frame(t(diag(s$d^(1-alpha) ) %*% t(s$v)))
+  names(vars) = names(obs)
+  vars$varnames = labels
+  
+  x_lab = sprintf('Comp.%d',x)
+  y_lab = sprintf('Comp.%d',y)
+ 
+  if(is.null(col)){
+    obs$col = 1
+  }else{
+    obs$col = col
+  }
+  plot = ggplot()+ geom_point(data=obs, aes_string(x=x_lab, y=y_lab, color='col'), alpha=0.6)
+  
+  mxy_obs = max( abs(max(obs[,c(x_lab,y_lab)])), abs(min(obs[,c(x_lab,y_lab)])))
+  mxy_vars = max( abs(max(vars[,c(x_lab,y_lab)])), abs(min(vars[,c(x_lab,y_lab)])))
+  
+  vars = vars %>% dplyr::mutate(
+    v1 = .55 *  mxy_obs / mxy_vars * vars[,x_lab],
+    v2 = .55 *  mxy_obs / mxy_vars * vars[,y_lab])
+  
+  
+  pca = summary(prcomp(X))$importance
+  
+  plot + geom_segment(data=vars, aes(x=0, y=0, xend=v1, yend=v2, text = varnames), 
+                      arrow=arrow(length=unit(0.2,"cm")), 
+                      alpha=0.75, size=1.3, col='red', alpha=0.5) +
+    geom_text(data=vars, aes(label=varnames, x=v1, y=v2), size=8) + theme_bw() + 
+    xlab(sprintf('Prin.Comp.%d (%5.2f %%)', x, pca[2,x]*100)) + 
+    ylab(sprintf('Prin.Comp.%d (%5.2f %%)', y, pca[2,y]*100))
+}
