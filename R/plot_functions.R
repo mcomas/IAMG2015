@@ -122,7 +122,8 @@ ggplot_biplot <- function(X, labels, x=1, y=2, col = NULL, alpha=0, size=2, tran
   }else{
     obs$col = col
   }
-  plot = ggplot()+ geom_point(data=obs, aes_string(x=x_lab, y=y_lab, color='col'), alpha=0.6)
+  plot = ggplot()+ geom_point(data=obs, aes_string(x=x_lab, y=y_lab, color='col'),
+                              size=size)
   
   mxy_obs = max( abs(max(obs[,c(x_lab,y_lab)])), abs(min(obs[,c(x_lab,y_lab)])))
   mxy_vars = max( abs(max(vars[,c(x_lab,y_lab)])), abs(min(vars[,c(x_lab,y_lab)])))
