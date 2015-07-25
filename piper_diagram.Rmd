@@ -1,0 +1,98 @@
+---
+title: "The Piper diagram"
+author: "Marc Comas-Cufí,  Antonella Buccianti, Josep Antoni Martín-Fernández and Glòria Mateu-Figueras"
+date: "July 16, 2015"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, echo=FALSE, comment="   ")
+options(width=200)
+library(ggmap)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(mixpack)
+library(gridExtra)
+source('R/plot_functions.R')
+load('data/iamg_data.RData')
+load('data/iamg_map.RData')
+clean_zeros = function(.data) .data  %>% subset(apply(.data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4), 1, prod) != 0)
+compo = function(.data) .data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>% subset(apply(., 1, prod) != 0)
+
+mgL_to_mmol = function(.data) .data %>% mutate(
+  HCO3=HCO3/61.02,
+  Ca=Ca/40.078,
+  Cl=Cl/35.4527,
+  Mg=Mg/24.305,
+  K=K/39.0983,
+  Na=Na/22.989,
+  SO4=SO4/96.06 )
+
+mmol_to_meq = function(.data) .data %>% mutate(
+  HCO3=HCO3,
+  Ca=2*Ca,
+  Cl=Cl,
+  Mg=2*Mg,
+  K=K,
+  Na=Na,
+  SO4=2*SO4
+)
+tern_ca = function(.data) .data %>% 
+  mutate(Ca = Ca, Mg = Mg, Na.K = Na + K) %>% 
+  select(Ca, Mg, Na.K)
+tern_an = function(.data) .data %>% 
+  select(Cl, SO4, HCO3)
+closure = function(.data, k = 100) (k*.data/apply(.data, 1, sum)) %>% round(4) %>% tbl_df
+```
+
+To represent a Piper diagram one should convert the data to meq
+
+```{r}
+data = data %>% clean_zeros
+(d.meq <- data %>% compo %>% mgL_to_mmol %>% mmol_to_meq)
+```
+
+Then, we amalgamate the Na and K, and separate between cations and anions:
+
+  * cations
+  
+```{r}
+d.meq %>% tern_ca %>% closure
+```
+
+  * anions
+```{r}
+d.meq %>% tern_an %>% closure
+```
+
+# Classification given by facies
+
+```{r, fig.width=7, fig.height=7}
+d.ca = d.meq %>% tern_ca %>% closure
+d.an = d.meq %>% tern_an %>% closure 
+
+facie = function(d.ca, d.an) {
+  res = rep(as.character(NA), nrow(d.ca))
+  res[d.ca$Na.K < 50 & d.an$HCO > 50] = 'Ca-HCO3 Type'
+  res[d.ca$Na.K > 50 & d.an$HCO < 50] = 'Na-Cl Type'
+  res[d.ca$Na.K < 50 & d.an$HCO < 50 & d.ca$Na.K + d.an$HCO < 50] = 'Ca-Cl Type'
+  res[d.ca$Na.K < 50 & d.an$HCO < 50 & d.ca$Na.K + d.an$HCO > 50] = 'Mixed Ca-Mg-Cl Type'
+  res[d.ca$Na.K > 50 & d.an$HCO > 50 & d.ca$Na.K + d.an$HCO > 150] = 'Na-HCO3 Type'
+  res[d.ca$Na.K > 50 & d.an$HCO > 50 & d.ca$Na.K + d.an$HCO < 150] = 'Mixed Ca-Na-HCO3 Type'
+  res
+}
+piper_data =  with(bind_cols(d.ca, d.an), transform_piper_data(Mg=Mg, Ca=Ca, Cl=Cl, SO4=SO4))
+data$facie = facie(d.ca, d.an)
+piper_data$facie = facie(d.ca, d.an)
+(mgl <- ggplot_piper() + 
+  geom_point(data=piper_data %>% mutate(g = facie), 
+             aes(x=x,y=y, col=g), size=2))
+```
+
+```{r, fig.width=8, fig.height=4.5}
+ggmap(map) + 
+  geom_point(data = data, aes(x = lon, y = lat), alpha=0.4, size=2) +
+  xlab(NULL) + ylab(NULL) + facet_wrap(~facie, nrow=2) + 
+  theme(axis.ticks = element_blank(), axis.text = element_blank())
+```

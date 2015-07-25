@@ -1,0 +1,237 @@
+---
+title: "Mixture model for the sample"
+author: "Marc Comas-Cufí,  Antonella Buccianti, Josep Antoni Martín-Fernández and Glòria Mateu-Figueras"
+date: "July 16, 2015"
+output: 
+  html_document: 
+    theme: readable
+    toc: yes
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, echo=FALSE, comment="   ")
+options(width=200)
+library(ggmap)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(mixpack)
+library(gridExtra)
+library(mclust)
+load('data/iamg_data.RData')
+load('data/iamg_map.RData')
+```
+
+```{r}
+clean_zeros = function(.data) .data  %>% subset(apply(.data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4), 1, prod) != 0)
+clean_non_located = function(.data) .data  %>% subset(complete.cases(.data %>% select(est, nord)))
+compo = function(.data) .data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>% subset(apply(., 1, prod) != 0)
+mgL_to_mmol = function(.data) .data %>% mutate(
+  HCO3=HCO3/61.02,
+  Ca=Ca/40.078,
+  Cl=Cl/35.4527,
+  Mg=Mg/24.305,
+  K=K/39.0983,
+  Na=Na/22.989,
+  SO4=SO4/96.06 )
+mmol_to_meq = function(.data) .data %>% mutate(
+  HCO3=HCO3,
+  Ca=2*Ca,
+  Cl=Cl,
+  Mg=2*Mg,
+  K=K,
+  Na=Na,
+  SO4=2*SO4
+)
+tern_ca = function(.data) .data %>% 
+  mutate(Ca = Ca, Mg = Mg, Na.K = Na + K) %>% 
+  select(Ca, Mg, Na.K)
+tern_an = function(.data) .data %>% 
+  select(Cl, SO4, HCO3)
+closure = function(.data, k = 100) (k*.data/apply(.data, 1, sum)) %>% round(4) %>% tbl_df
+gmean = function(...){
+  .data = data.frame(list(...))
+  apply(.data, 1, prod)^(1/NCOL(.data))
+}
+balance = function(.data) .data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>%
+  mutate(
+    b1 = sqrt(4*3/(4+3)) * log(gmean(Ca, Mg, Na, K) / gmean(HCO3, SO4, Cl)),
+    b2 = sqrt(2*2/(2+2)) * log(gmean(Ca, Mg) / gmean(Na, K)),
+    b3 = sqrt(1*1/(1+1)) * log(Ca/Mg),
+    b4 = sqrt(1*1/(1+1)) * log(Na/K),
+    b5 = sqrt(1*2/(1+2)) * log(gmean(HCO3)/gmean(SO4, Cl)),
+    b6 = sqrt(1*1/(1+1)) * log(SO4/Cl) ) %>% select(b1,b2,b3,b4,b5,b6)
+```
+
+
+```{r}
+data = data %>% clean_zeros %>% clean_non_located
+```
+
+If we try to sampling from the original dataset. It is likely to obtain sample from location where the where a higher amount of extraction. To avoid sampling always from the same regions we applied an [inverse probability bootstrap](http://www.ncbi.nlm.nih.gov/pmc/articles/PMC4488419/) strategy by first, grouping the data using a hierarchical parition (HC) algorithm and then calculating the probability of being chosen by calculating the size of the HC cluster where data lied.
+
+```{r, fig.height=3, fig.width=3, results='hold'}
+N = 1000
+ALPHA=0.05
+HCLEVEL = 300
+set.seed(1)
+id_sample = sample(1:nrow(data), N)
+
+data.sim = data %>% slice(id_sample)
+ggmap(map) + 
+  geom_point(data = data.sim, aes(x = lon, y = lat), alpha=ALPHA) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank()) + ggtitle('Direct sampling')
+
+## Hierarchical partition
+res = hclust(data %>% select(est, nord) %>% dist, method="ward.D2")
+cluster = cutree(res, HCLEVEL)
+(p1<-ggmap(map) + 
+  geom_point(data = data %>% mutate(g=as.factor(cluster)), 
+             aes(x = lon, y = lat, col=g), alpha=1) +
+  xlab(NULL) + ylab(NULL) +
+  theme(legend.position = 'none', 
+        axis.ticks = element_blank(), 
+        axis.text = element_blank())) + ggtitle('Hierarchical partition')
+#p1 + coord_cartesian(xlim= c(10.75, 11.25), ylim = c(43.75, 44.25))
+
+# IPW
+data.p = data %>% mutate(
+  g = cluster,
+  n.g = table(g)[g],
+  p.g = n.g/nrow(data),
+  w = 1/p.g,
+  p = w/sum(w))
+data.sim = data.p %>% slice(sample(1:nrow(data.p), N, prob = data.p$p, replace = FALSE))
+ggmap(map) + 
+  geom_point(data = data.sim, aes(x = lon, y = lat), alpha=ALPHA) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank()) + ggtitle('IPW sampling')
+#p2 + coord_cartesian(xlim= c(10.75, 11.25), ylim = c(43.75, 44.25))
+```
+
+Final sample:
+
+```{r}
+(d.meq <- data.sim %>% compo %>% mgL_to_mmol %>% mmol_to_meq)
+```
+
+## CLR-biplot
+
+```{r, fig.width=9, fig.height=7}
+source('R/plot_functions.R')
+alpha = .25
+Xclr = clr_coordinates(X = d.meq) %>% tbl_df
+labels = sprintf("clr(%s)", names(Xclr))
+
+grid.arrange(
+  ggplot_biplot(X = Xclr, labels = labels, x = 1, y = 2, alpha=alpha),
+  ggplot_biplot(X = Xclr, labels = labels, x = 3, y = 2, alpha=alpha),
+  ggplot_biplot(X = Xclr, labels = labels, x = 1, y = 3, alpha=alpha), 
+  nrow = 2, ncol = 2, main='CLR-biplot')
+```
+
+# Mixture models using balances
+
+We are going to work with following balances:
+
+```
+b1 = sqrt(4*3/(4+3)) * log(gmean(Ca, Mg, Na, K) / gmean(HCO3, SO4, Cl)),
+b2 = sqrt(2*2/(2+2)) * log(gmean(Ca, Mg) / gmean(Na, K)),
+b3 = sqrt(1*1/(1+1)) * log(Ca/Mg),
+b4 = sqrt(1*1/(1+1)) * log(Na/K),
+b5 = sqrt(1*2/(1+2)) * log(gmean(HCO3)/gmean(SO4, Cl)),
+b6 = sqrt(1*1/(1+1)) * log(SO4/Cl) 
+```
+## Working with the full composition
+
+```{r, fig.width=9, fig.height=9}
+K = 9
+mod <- Mclust(d.meq %>% balance, K)
+plot.Mclust(mod, col = rainbow(K), what = 'classification')
+```
+
+```{r, fig.width=9, fig.height=9}
+#data.post = cbind(data.sim %>%mutate(clust=as.factor(mod$classification)), 
+#                  as.data.frame(mod$z))  %>% gather(key=comp, value=post, V1:V9)
+
+data.post = cbind(data.sim %>% mutate(clust=as.factor(mod$classification)), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+
+ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post, col=clust), size=4) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, nrow=3) +
+  scale_colour_manual(values=rainbow(K)) + 
+  ggtitle('IPW sampling')
+```
+
+## Separating cations and anions
+
+ * Cations
+ 
+```{r, fig.width=3, fig.height=3, results='hold'}
+mod.cat <- Mclust(d.meq %>% balance %>% select(b2, b3, b4),3)
+lbls = c('Ca', 'Mg', 'Na', 'K')
+ggplot_biplot(clr_coordinates( d.meq %>% select(one_of(lbls))), 
+              labels = sprintf('clr_%s', lbls), x = 1, y = 2, 
+              col = rainbow(3)[mod.cat$classification], alpha=1) + theme(legend.position='none')
+ggplot_biplot(clr_coordinates( d.meq %>% select(one_of(lbls))), 
+              labels = sprintf('clr_%s', lbls), x = 1, y = 3, 
+              col = rainbow(3)[mod.cat$classification], alpha=1) + theme(legend.position='none')
+```
+
+ * Anions
+ 
+```{r, fig.width=3, fig.height=3}
+mod.an <- Mclust(d.meq %>% balance %>% select(b5, b6), 5)
+lbls = c('Cl', 'SO4', 'HCO3')
+ggplot_biplot(clr_coordinates( d.meq %>% select(one_of(lbls))), 
+              labels = sprintf('clr_%s', lbls), x = 1, y = 2, 
+              col = rainbow(5)[mod.an$classification], alpha=1) + theme(legend.position='none')
+```
+
+```{r, fig.width=9, fig.height=7}
+#data.post = cbind(data.sim %>%mutate(clust=as.factor(mod$classification)), 
+#                  as.data.frame(mod$z))  %>% gather(key=comp, value=post, V1:V9)
+data.post = cbind(data.sim %>% mutate(clust.cat=as.factor(mod.cat$classification)), 
+                  data.frame(post.cat = apply(mod.cat$z, 1, max),
+                             clust.an = as.factor(mod.an$classification),
+                             post.an=  apply(mod.an$z, 1, max))) %>% mutate(
+                               facie = sprintf('%d-%d', clust.cat, clust.an)
+                             ) %>% tbl_df
+ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post.cat*post.an, col=facie), size=4) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_grid(clust.cat~clust.an) +
+  scale_colour_manual(values=rainbow(15)) + 
+  ggtitle('IPW sampling')
+```
+
+## A hierarchical clustering 
+
+```{r}
+hp = get_hierarchical_partition(tau = mod$z,
+                                omega = function(v_tau, a) v_tau[a],
+                                lambda = function(v_tau, a, b) log(v_tau[b]/v_tau[a])^2)
+ggmap(map) + 
+  geom_point(data = data.post %>% mutate(g = cluster_partition(mod$z, hp[[6]])), 
+             aes(x = lon, y = lat), size=4) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~g) +
+  scale_colour_manual(values=rainbow(15)) + 
+  ggtitle('IPW sampling')
+```

@@ -1,0 +1,622 @@
+---
+title: "Mixture model for the sample using the full composition"
+author: "Marc Comas-Cufí,  Antonella Buccianti, Josep Antoni Martín-Fernández and Glòria Mateu-Figueras"
+date: "July 16, 2015"
+output: 
+  html_document: 
+    theme: readable
+    toc: yes
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, echo=FALSE, comment="   ")
+options(width=220)
+library(ggmap)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(mixpack)
+library(gridExtra)
+library(mclust)
+source('R/plot_functions.R')
+load('data/iamg_data.RData')
+load('data/iamg_map.RData')
+```
+
+```{r}
+clean_zeros = function(.data) .data  %>% subset(apply(.data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4), 1, prod) != 0)
+clean_non_located = function(.data) .data  %>% subset(complete.cases(.data %>% select(est, nord)))
+compo = function(.data) .data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>% subset(apply(., 1, prod) != 0)
+mgL_to_mmol = function(.data) .data %>% mutate(
+  HCO3=HCO3/61.02,
+  Ca=Ca/40.078,
+  Cl=Cl/35.4527,
+  Mg=Mg/24.305,
+  K=K/39.0983,
+  Na=Na/22.989,
+  SO4=SO4/96.06 )
+mmol_to_meq = function(.data) .data %>% mutate(
+  HCO3=HCO3,
+  Ca=2*Ca,
+  Cl=Cl,
+  Mg=2*Mg,
+  K=K,
+  Na=Na,
+  SO4=2*SO4
+)
+tern_ca = function(.data) .data %>% 
+  mutate(Ca = Ca, Mg = Mg, Na.K = Na + K) %>% 
+  select(Ca, Mg, Na.K)
+tern_an = function(.data) .data %>% 
+  select(Cl, SO4, HCO3)
+closure = function(.data, k = 100) (k*.data/apply(.data, 1, sum)) %>% round(4) %>% tbl_df
+gmean = function(...){
+  .data = data.frame(list(...))
+  apply(.data, 1, prod)^(1/NCOL(.data))
+}
+balance = function(.data) .data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>%
+  mutate(
+    b1 = sqrt(4*3/(4+3)) * log(gmean(Ca, Mg, Na, K) / gmean(HCO3, SO4, Cl)),
+    b2 = sqrt(2*2/(2+2)) * log(gmean(Ca, Mg) / gmean(Na, K)),
+    b3 = sqrt(1*1/(1+1)) * log(Ca/Mg),
+    b4 = sqrt(1*1/(1+1)) * log(Na/K),
+    b5 = sqrt(1*2/(1+2)) * log(gmean(HCO3)/gmean(SO4, Cl)),
+    b6 = sqrt(1*1/(1+1)) * log(SO4/Cl) ) %>% select(b1,b2,b3,b4,b5,b6)
+balance_nms = c('b1' = '(Ca·Mg·Na·K)/(HCO3·SO4·Cl)',
+                'b2' = '(Ca·Mg)/(Na·K)',
+                'b3' = 'Ca/Mg',
+                'b4' = 'Na/K',
+                'b5' = 'HCO3/(SO4·Cl)', 
+                'b6' = 'SO4·Cl')
+
+base = list(c(1, 1, 1, 1,-1,-1,-1),
+            c(1, 1,-1,-1, 0, 0, 0),
+            c(1,-1, 0, 0, 0, 0, 0),
+            c(0, 0, 1,-1, 0, 0, 0),
+            c(0, 0, 0, 0, 1,-1,-1),
+            c(0, 0, 0, 0, 0, 1,-1))
+pos = function(n,d) 1/n * sqrt(n*d/(n+d))
+neg = function(n,d) -1/d * sqrt(n*d/(n+d))
+base = lapply(base, function(x){
+  res = x
+  res[x == 1] = pos(sum(x==1), sum(x==-1))
+  res[x == -1] = neg(sum(x==1), sum(x==-1))
+  res[x == 0] = 0
+  exp(res) / sum(exp(res))
+})
+balance_coda = function(Xbal){
+  X = Reduce('*', lapply(1:NCOL(Xbal), function(i) sapply(base[[i]], function(x) x^Xbal[,i])))
+  (X/apply(X,1,sum)) %>% data.frame %>% setNames(c('Ca','Mg', 'Na', 'K', 'HCO3', 'SO4', 'Cl'))
+}
+```
+
+
+```{r}
+data = data %>% clean_zeros %>% clean_non_located
+
+N = 1000
+ALPHA=0.05
+HCLEVEL = 300
+set.seed(1)
+id_sample = sample(1:nrow(data), N)
+
+
+## Hierarchical partition
+res = hclust(data %>% select(est, nord) %>% dist, method="ward.D2")
+cluster = cutree(res, HCLEVEL)
+data.p = data %>% mutate(
+  g = cluster,
+  n.g = table(g)[g],
+  p.g = n.g/nrow(data),
+  w = 1/p.g,
+  p = w/sum(w))
+data.sim = data.p %>% slice(sample(1:nrow(data.p), N, prob = data.p$p, replace = FALSE))
+```
+
+We start with an IPB sample
+
+```{r}
+(d.meq <- data.sim %>% compo %>% mgL_to_mmol %>% mmol_to_meq)
+```
+
+# Mixture models
+
+We work with following balances
+
+We are going to work with following balances:
+
+```
+b1 = sqrt(4*3/(4+3)) * log(gmean(Ca, Mg, Na, K) / gmean(HCO3, SO4, Cl)),
+b2 = sqrt(2*2/(2+2)) * log(gmean(Ca, Mg) / gmean(Na, K)),
+b3 = sqrt(1*1/(1+1)) * log(Ca/Mg),
+b4 = sqrt(1*1/(1+1)) * log(Na/K),
+b5 = sqrt(1*2/(1+2)) * log(gmean(HCO3)/gmean(SO4, Cl)),
+b6 = sqrt(1*1/(1+1)) * log(SO4/Cl) 
+```
+
+```{r, fig.width=9, fig.height=9}
+K = 15
+summary(mod <- Mclust(d.meq %>% balance, K))
+```
+
+How are the mean of each component?
+
+Balance representation
+
+```{r, fig.width=12, fig.height=6}
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=3, scale='free') + 
+  theme_bw() + theme(legend.position = 'none')
+```
+
+The centers of each component
+
+```{r, fig.width=12, fig.height=6}
+df = mod$parameters$mean %>% t %>% data.frame %>% balance_coda
+df$id = sprintf('%02d', 1:K)  
+df = df %>% gather(key='comp', value='value', -id)
+df.mean = df %>% group_by(comp) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=comp, y=value, colour=id), size=4) +
+  facet_wrap(~id, ncol=3) + 
+  theme_bw() + theme(legend.position = 'none')
+```
+
+The centers in a biplot
+
+```{r}
+df = mod$parameters$mean %>% t %>% data.frame %>% balance_coda
+Xclr = clr_coordinates(X = df) %>% tbl_df
+labels = sprintf("clr(%s)", names(Xclr))
+
+
+ggplot_biplot(X = Xclr, labels = labels, x = 1, y = 2, alpha=0.9)
+```
+
+## CLR-biplot
+
+The sample represented in a biplot colored clustered with respect the component
+
+```{r, fig.width=9, fig.height=7}
+source('R/plot_functions.R')
+alpha = .95
+Xclr = clr_coordinates(X = d.meq) %>% tbl_df
+labels = sprintf("clr(%s)", names(Xclr))
+
+grid.arrange(
+  ggplot_biplot(X = Xclr, labels = labels, x = 1, y = 2, alpha=alpha, 
+                col = as.character(mod$classification)) + 
+    theme(legend.position='none') + scale_colour_manual(values=rainbow(K)),
+  ggplot_biplot(X = Xclr, labels = labels, x = 3, y = 2, alpha=alpha,
+                col = as.character(mod$classification)) + 
+    theme(legend.position='none') + scale_colour_manual(values=rainbow(K)),
+  ggplot_biplot(X = Xclr, labels = labels, x = 1, y = 3, alpha=alpha,
+                col = as.character(mod$classification)) + 
+    theme(legend.position='none') + scale_colour_manual(values=rainbow(K)), 
+  nrow = 2, ncol = 2, main='CLR-biplot')
+```
+
+# Hierarchical merging
+
+```{r, include=F}
+xlog = function(x) x * log(x)
+l_lambda = list(
+  'entr' = function(v_tau, a, b) xlog(v_tau[a] + v_tau[b]) - xlog(v_tau[a]) - xlog(v_tau[b]),
+  'demp' = function(v_tau, a, b) if(which.max(v_tau) == b) 1 else 0,
+  'demp.mod' = function(v_tau, a, b) v_tau[b] * (v_tau[a] + v_tau[b])^-1,
+  'coda' = function(v_tau, a, b) log(v_tau[b] / v_tau[a]),
+  'coda.norm' = function(v_tau, a, b) -log(v_tau[b] / v_tau[a])^2,
+  'prop' = function(v_tau, a, b) v_tau[b] )
+
+# Weitghing functions
+l_omega = list(
+  'cnst' = function(v_tau, a) 1,
+  'prop' = function(v_tau, a) v_tau[a],
+  'dich' = function(v_tau, a) if(which.max(v_tau) == a) 1 else 0
+)
+```
+
+```{r}
+POST = mod$z#[,-c(6,12)]
+POST[POST==0] = .Machine$double.xmin
+hp = get_hierarchical_partition(POST,
+                                omega = l_omega[['prop']],
+                                lambda = l_lambda[['coda.norm']])
+hp.mod = hp
+```
+
+## 15 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[15]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=2) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 14 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+  data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[14]])), 
+                    data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+  print(ggmap(map) + 
+    geom_point(data = data.post, 
+               aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+    xlab(NULL) + ylab(NULL) +
+    theme(axis.ticks = element_blank(), 
+          axis.text = element_blank(),
+          legend.position = 'none') +
+    facet_wrap(~clust, ncol=3) +
+    scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df$id[df$id %in% c('02', '14')] = '02-14'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 13 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[13]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df$id[df$id %in% c('02', '14')] = '02-14'
+df$id[df$id %in% c('07', '12')] = '07-12'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 12 Components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[12]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df$id[df$id %in% c('02', '14')] = '02-14'
+df$id[df$id %in% c('07', '12')] = '07-12'
+df$id[df$id %in% c('06', '09')] = '06-09'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 11 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[11]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df$id[df$id %in% c('02', '14')] = '02-14'
+df$id[df$id %in% c('07', '12')] = '07-12'
+df$id[df$id %in% c('05', '06', '09')] = '05-06-09'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 10 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[10]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+
+df$id[df$id %in% c('07', '12')] = '07-12'
+df$id[df$id %in% c('02', '14', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 9 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[9]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+
+df$id[df$id %in% c('07', '12', '02', '14', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 8 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[8]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.2) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+
+df$id[df$id %in% c('07', '11', '12', '02', '14', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 7 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[7]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.25) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+
+df$id[df$id %in% c('07', '04', '11', '12', '02', '14', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 6 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[6]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.25) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+
+df$id[df$id %in% c('07', '11', '12', '04', '02', '14', '15', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+# 5 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[5]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.25) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+
+df$id[df$id %in% c('07', '03', '11', '12', '04', '02', '14', '15', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 4 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[4]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.25) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df$id[df$id %in% c('01', '13')] = '01-13'
+df$id[df$id %in% c('07', '03', '11', '12', '04', '02', '14', '15', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+## 3 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+data.post = cbind(data.sim %>% mutate(clust=cluster_partition(mod$z, hp.mod[[3]])), 
+                  data.frame(post = apply(mod$z, 1, max)))  %>% tbl_df
+print(ggmap(map) + 
+  geom_point(data = data.post, 
+             aes(x = lon, y = lat, alpha=post), size=4, alpha=0.25) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position = 'none') +
+  facet_wrap(~clust, ncol=3) +
+  scale_colour_manual(values=rainbow(K)) )
+
+df = mod$parameters$mean %>% t %>% data.frame %>% setNames(balance_nms) %>%
+  mutate(id = sprintf('%02d', 1:K)) %>% 
+  gather(key='balance', value='value', -id)
+
+df$id[df$id %in% c('01', '08', '13')] = '01-08-13'
+df$id[df$id %in% c('07', '03', '11', '12', '04', '02', '14', '15', '05', '06', '09')] = 'other'
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+ggplot() + geom_point(data=df, aes(x=id, y=value, colour=id), size=4) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```

@@ -78,16 +78,16 @@ ggplot_piper <- function() {
     geom_text(aes(c(95,85,75,65),grid1p3$y2, label=c(80, 60, 40, 20)), size=3) +
     # geom_text(aes(17,50, label="Mg^2"), parse=T, angle=60, size=4) +
     coord_equal(ratio=1)+  
-    geom_text(aes(17,50, label="Mg^2"), angle=60, size=4, parse=TRUE) +  
-    geom_text(aes(82.5,50, label="Na + K"), angle=-60, size=4) +
-    geom_text(aes(50,-10, label="Ca^2"), size=4, parse=TRUE) +
+    geom_text(aes(17,50, label="Mg^{2+phantom()}"), angle=60, size=4, parse=TRUE) +  
+    geom_text(aes(82.5,50, label="Na^+phantom()~+~K^+phantom()"), angle=-60, size=4,parse=TRUE) +
+    geom_text(aes(50,-10, label="Ca^{2+phantom()}"), size=4, parse=TRUE) +
     
     
     geom_text(aes(170,-10, label="Cl^-phantom()"), size=4, parse=TRUE) +
-    geom_text(aes(205,50, label="SO^4"), angle=-60, size=4, parse=TRUE) +
-    geom_text(aes(137.5,50, label="Alkalinity~as~HCO^3"), angle=60, size=4, parse=TRUE) +
-    geom_text(aes(72.5,150, label="SO^4~+~Cl^-phantom()"), angle=60, size=4, parse=TRUE) +
-    geom_text(aes(147.5,150, label="Ca^2~+~Mg^2"), angle=-60, size=4, parse=TRUE) + 
+    geom_text(aes(205,50, label="SO[4]^{2-phantom()}"), angle=-60, size=4, parse=TRUE) +
+    geom_text(aes(137.5,50, label="HCO[3]^{-phantom()}"), angle=60, size=4, parse=TRUE) +
+    geom_text(aes(72.5,150, label="SO[4]^{2-phantom()}~+~Cl^-phantom()"), angle=60, size=4, parse=TRUE) +
+    geom_text(aes(147.5,150, label="Ca^{2+phantom()}~+~Mg^{2+phantom()}"), angle=-60, size=4, parse=TRUE) + 
     
     geom_text(aes(c(155,145,135,125),grid2p2$y2, label=c(20, 40, 60, 80)), size=3) +
     geom_text(aes(c(215,205,195,185),grid2p3$y2, label=c(20, 40, 60, 80)), size=3) +
@@ -123,8 +123,11 @@ ggplot_biplot <- function(X, labels, x=1, y=2, col = NULL, alpha=0, size=2, tran
     obs$col = col
   }
   plot = ggplot()+ geom_point(data=obs, aes_string(x=x_lab, y=y_lab, color='col'),
-                              size=size)
-  
+                              size=size, alpha=alpha)
+  if(is.null(col)){
+    plot = ggplot()+ geom_point(data=obs, aes_string(x=x_lab, y=y_lab),
+                                color='blue', size=size, alpha=alpha)
+  }
   mxy_obs = max( abs(max(obs[,c(x_lab,y_lab)])), abs(min(obs[,c(x_lab,y_lab)])))
   mxy_vars = max( abs(max(vars[,c(x_lab,y_lab)])), abs(min(vars[,c(x_lab,y_lab)])))
   
@@ -138,7 +141,7 @@ ggplot_biplot <- function(X, labels, x=1, y=2, col = NULL, alpha=0, size=2, tran
   plot + geom_segment(data=vars, aes(x=0, y=0, xend=v1, yend=v2, text = varnames), 
                       arrow=arrow(length=unit(0.2,"cm")), 
                       alpha=0.75, size=1.3, col='red', alpha=0.5) +
-    geom_text(data=vars, aes(label=varnames, x=v1, y=v2), size=8) + theme_bw() + 
+    geom_text(data=vars, aes(label=varnames, x=v1, y=v2), size=5) + theme_bw() + 
     xlab(sprintf('Prin.Comp.%d (%5.2f %%)', x, pca[2,x]*100)) + 
     ylab(sprintf('Prin.Comp.%d (%5.2f %%)', y, pca[2,y]*100))
 }
