@@ -1,0 +1,21 @@
+ * Presentar les dades. (1 o 2)
+  - Lozalització, les components. 
+ * Ensenyar les dades al Piper Diagram i la classificació en el mapa (1)
+  - Descriure els grups i veure'ls en un mapa
+  - S'ha d'amalgamar, no està basat en ratios sinò amb valors absoluts dues parts (1 catió i 1 anió).
+ * Cluster basat en mixtures.
+  - Ensenyar procés de classificar amb mixtures (esquema) i merging
+  - pas 1: ajustar, pas 2: càlcul poterioris, pas 3: hierarchical merging process, pas 4: interpreting results
+ * Pas 1: Ajustar una mixtura de components (1) [BIC]
+ * Pas 2: Càlcul de posteriors (1) 
+ * Pas 3: Com fem el merging (1) [Formula integradora ]
+ * Pas 4: Interpretació dels resultats 
+ * Open questions & future work:
+  - Quant s'hauria de parar el procés de merging? Mirar salt de l'score. [Calinski-Harabasz criterion clustering evaluation]
+  - Validació de l'assignació: Treballar amb diferentes submostres (bootstrap) i veure si hi ha estabilitat en el mètode. Com s'agafen aquestes submostres?
+  
+===================
+
+Per l'Antonella.
+ - Nivells de la jerarquia obtinguda representats en diferents mapes.
+ - Preguntar-li si sap alguna cosa de IPB.
