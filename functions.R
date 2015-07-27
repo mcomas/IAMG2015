@@ -36,3 +36,30 @@ balance = function(.data) .data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>%
     b4 = sqrt(1*1/(1+1)) * log(Na/K),
     b5 = sqrt(1*2/(1+2)) * log(gmean(HCO3)/gmean(SO4, Cl)),
     b6 = sqrt(1*1/(1+1)) * log(SO4/Cl) ) %>% select(b1,b2,b3,b4,b5,b6)
+
+balance_nms = c('b1' = '(Ca·Mg·Na·K)/(HCO3·SO4·Cl)',
+                'b2' = '(Ca·Mg)/(Na·K)',
+                'b3' = 'Ca/Mg',
+                'b4' = 'Na/K',
+                'b5' = 'HCO3/(SO4·Cl)', 
+                'b6' = 'SO4·Cl')
+
+base = list(c(1, 1, 1, 1,-1,-1,-1),
+            c(1, 1,-1,-1, 0, 0, 0),
+            c(1,-1, 0, 0, 0, 0, 0),
+            c(0, 0, 1,-1, 0, 0, 0),
+            c(0, 0, 0, 0, 1,-1,-1),
+            c(0, 0, 0, 0, 0, 1,-1))
+pos = function(n,d) 1/n * sqrt(n*d/(n+d))
+neg = function(n,d) -1/d * sqrt(n*d/(n+d))
+base = lapply(base, function(x){
+  res = x
+  res[x == 1] = pos(sum(x==1), sum(x==-1))
+  res[x == -1] = neg(sum(x==1), sum(x==-1))
+  res[x == 0] = 0
+  exp(res) / sum(exp(res))
+})
+balance_coda = function(Xbal){
+  X = Reduce('*', lapply(1:NCOL(Xbal), function(i) sapply(base[[i]], function(x) x^Xbal[,i])))
+  (X/apply(X,1,sum)) %>% data.frame %>% setNames(c('Ca','Mg', 'Na', 'K', 'HCO3', 'SO4', 'Cl'))
+}
