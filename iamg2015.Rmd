@@ -20,6 +20,7 @@ library(dplyr)
 library(mixpack)
 library(gridExtra)
 library(Rmixmod)
+library(abind)
 source('R/plot_functions.R')
 load('data/iamg_data.RData')
 load('data/iamg_map.RData')
@@ -132,10 +133,11 @@ ggmap(map) +
   scale_colour_continuous( low="blue", high="red" ) 
 ```
 
-```{r, eval=F}
-library(abind)
-fit = function(.data, .k, .seed) mixmodCluster(.data, nbCluster = .k, models = mixmodGaussianModel(listModels = 'Gaussian_pk_Lk_Ck'),
-                   strategy = mixmodStrategy(seed=.seed, nbTry = 5))
+```{r}
+fit = function(.data, .k, .seed) 
+  mixmodCluster(.data, nbCluster = .k, 
+                models = mixmodGaussianModel(listModels = 'Gaussian_pk_Lk_Ck'),
+                strategy = mixmodStrategy(seed=.seed, nbTry = 5))
 ```
 
 ```{r, eval=F}
@@ -151,23 +153,6 @@ disp_diff = function(mn5, seed){
 }
 test.statistics = sapply(10:29, function(i, mn) disp_diff(mn, i), mn5)
 -2*mn5@bestResult@likelihood--2*mn6@bestResult@likelihood
-```
-
-```{r, eval=F}
-K = 8
-K_next = 9
-mn.K = fit(data.balances, K, 1)
-mn.K_next = fit(data.balances, K_next, 1)
--2*mn.K@bestResult@likelihood--2*mn.K_next@bestResult@likelihood
-disp_diff = function(mn, seed){
-  sim1 = rmixnorm_solution(4254, mn)
-
-  fit.K = fit(as.data.frame(sim1), K, seed)
-  fit.K_next = fit(as.data.frame(sim1), K_next, seed)
-  
-  -2*fit.K@bestResult@likelihood--2*fit.K_next@bestResult@likelihood
-}
-test.statistics = sapply(1:19, function(i, mn) disp_diff(mn, i), mn.K)
 ```
 
 ```{r, eval=F}
@@ -193,3 +178,91 @@ sort(c(obs, sample(unlist(test.statistics), 19, replace = F))) == obs
 
 Using the test proposed by Aitkin we end up fitting a mixture with $K=14$ components to the dataset.
 
+```{r}
+xlog = function(x) x * log(x)
+l_lambda = list(
+  'entr' = function(v_tau, a, b) xlog(v_tau[a] + v_tau[b]) - xlog(v_tau[a]) - xlog(v_tau[b]),
+  'demp' = function(v_tau, a, b) if(which.max(v_tau) == b) 1 else 0,
+  'demp.mod' = function(v_tau, a, b) v_tau[b] * (v_tau[a] + v_tau[b])^-1,
+  'coda' = function(v_tau, a, b) log(v_tau[b] / v_tau[a]),
+  'coda.norm' = function(v_tau, a, b) -log(v_tau[b] / v_tau[a])^2,
+  'prop' = function(v_tau, a, b) v_tau[b] )
+
+# Weitghing functions
+l_omega = list(
+  'cnst' = function(v_tau, a) 1,
+  'prop' = function(v_tau, a) v_tau[a],
+  'dich' = function(v_tau, a) if(which.max(v_tau) == a) 1 else 0
+)
+```
+
+```{r}
+K = 14
+mod = fit(data.balances, K, 1)
+POST = mod@bestResult@proba
+POST[POST==0] = .Machine$double.xmin
+hp = get_hierarchical_partition(POST,
+                                omega = l_omega[['prop']],
+                                lambda = l_lambda[['coda.norm']])
+hp.mod = hp
+```
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+ggmap(map) + 
+  geom_point(data = data %>% mutate(g = mod@bestResult@partition), aes(x = lon, y = lat), alpha=0.4, col='black') +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), axis.text = element_blank()) + 
+  facet_wrap(~g, ncol=3)
+
+df = mod@bestResult@parameters@mean %>% data.frame %>% tbl_df %>% 
+  setNames(balance_nms) %>%
+  mutate(id = 1:K) %>% 
+  gather(key='balance', value='value', -id)
+hp_temp = hp.mod[[K]]
+for(i in names(hp_temp)){
+  df$id[df$id %in% hp_temp[[i]]] = i
+}
+df$id = stringr::str_sub(df$id, 1, 5)
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+df$id = factor(df$id, 
+               levels = unique(df$id)[order( (df %>% subset(balance == levels(df$balance)[1]))[['value']] )])
+ggplot() + 
+  geom_point(data=df %>% dplyr::arrange(balance,value), 
+             aes(x=id, y=value, colour=id), size=3) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
+
+### With K = 13 components
+
+```{r, results='hold', fig.width=4.4, fig.height=8}
+ggmap(map) + 
+  geom_point(data = data %>% mutate(g = mod@bestResult@partition), aes(x = lon, y = lat), alpha=0.4, col='black') +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), axis.text = element_blank()) + 
+  facet_wrap(~g, ncol=3)
+
+df = mod@bestResult@parameters@mean %>% data.frame %>% tbl_df %>% 
+  setNames(balance_nms) %>%
+  mutate(id = 1:K) %>% 
+  gather(key='balance', value='value', -id)
+hp_temp = hp.mod[[13]]
+for(i in names(hp_temp)){
+  df$id[df$id %in% hp_temp[[i]]] = i
+}
+df$id = stringr::str_sub(df$id, 1, 5)
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+df$id = factor(df$id, 
+               levels = unique(df$id)[order( (df %>% subset(balance == levels(df$balance)[1]))[['value']] )])
+ggplot() + 
+  geom_point(data=df %>% dplyr::arrange(balance,value), 
+             aes(x=id, y=value, colour=id), size=3) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=1, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90))
+```
