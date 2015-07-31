@@ -51,8 +51,7 @@ data %>% select(HCO3, Ca, Cl, Mg, K, Na, SO4) %>% closure %>%
     max = max(val, na.rm=T), 
     zeros = sum(val == 0, na.rm=T))
 ```
-  
-  * `27` zeros appeared in part 27,
+
   * `2` compositions were missing,
   * `539` observation did not have the location well registered
 
@@ -63,7 +62,7 @@ ggmap(map) +
   theme(axis.ticks = element_blank(), axis.text = element_blank())
 ```
 
-* We work with a sample of `4,254` observations without zeros, missing data and with registered location.
+* We worked with a sample of `4,254` observations without zeros, with complete cases and with registered location.
 
 ```{r}
 data = data %>% clean_zeros %>% clean_non_located
