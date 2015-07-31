@@ -1,6 +1,6 @@
 ---
 title: "Presentation IAMG 2015"
-author: "Marc Comas-Cufí"
+author: "Marc Comas-Cufí,  Antonella Buccianti, Josep Antoni Martín-Fernández and Glòria Mateu-Figueras"
 date: "27 Jul 2015"
 output: 
   html_document: 
