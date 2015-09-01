@@ -1,0 +1,49 @@
+<<include=F>>=
+HP  = hp.mod[[LVL]]
+hp_temp = lapply(HP, function(i) sprintf('%02d', i))
+
+df$g = ''
+for(i in names(hp_temp)){
+  df$g[df$g0 %in% hp_temp[[i]]] = i
+}
+
+lvls = df %>% filter(balance == '(Ca·Mg·Na·K)/(HCO3·SO4·Cl)') %>% 
+                  group_by(g) %>% 
+                  summarise( value.m = mean(value) ) %>% 
+                  arrange(value.m) %>% select(g) %>% .[[1]]
+data$g = factor(cluster_partition(mod@bestResult@proba, HP), levels = lvls)
+df$g = factor(df$g, lvls)
+
+ggmapLVL <- ggmap(map) + 
+  geom_point(data = data, aes(x = lon, y = lat, col = g0), alpha=0.4) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), axis.text = element_blank()) + 
+  facet_wrap(~g, nrow=2) + theme(legend.position = 'none')
+
+gg_balLVL <- ggplot() + 
+  geom_point(data=df, 
+             aes(x=g, y=value, colour=g0), size=3) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=2, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90)) + 
+  scale_x_discrete(breaks=lvls, labels=ifelse(nchar(lvls) > 5, paste0(substr(lvls, 1, 4), '...'), lvls))
+@
+
+\begin{frame}
+\frametitle{Merging components: \Sexpr{LVL} components}
+
+\begin{columns}
+\begin{column}{\textwidth}
+<<fig.width=12, fig.height=8, warning=FALSE>>=
+grid.newpage()
+vpa_ <- viewport(width = 1, height = 0.6, x = 0.5, y = 0.3)
+print(gg_balLVL, vp = vpa_)
+vpb_ <- viewport(width = 1, height = 0.4, x = 0.5, y = 0.8)
+print(ggmapLVL, vp = vpb_)
+@
+\end{column}
+\end{columns}
+
+\end{frame}
+

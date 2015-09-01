@@ -1,6 +1,9 @@
 \documentclass[10pt]{beamer}
 
 \usepackage[utf8]{inputenc}
+\newcommand{\m}[1]{\boldsymbol{#1}}
+
+
 
 \title{Finite mixtures of distributions: \\ compositional model-based clustering}
 \subtitle{IAMG 2015, Freiberg}
@@ -15,12 +18,13 @@
 \end{frame}
 
 <<echo=FALSE, include=FALSE>>=
-knitr::opts_chunk$set(comment=NA, echo=FALSE)
+knitr::opts_chunk$set(comment=NA, echo=FALSE, eval=T)
 library(ggmap)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(grid)
+library(xtable)
 source('R/plot_functions.R')
 load('data/iamg_data.RData')
 load('data/iamg_map.RData')
@@ -44,9 +48,9 @@ data = data %>% clean_zeros %>% clean_non_located
 \item pH and Conductivity, and
 \item $HCO_3$, $Ca$, $Cl$, $Mg$, $K$, $Na$, $SO_4$.
 \end{itemize}
-\item Incompletness
+\item Removed from the study:
 \begin{itemize}
-\item 27 with zero (K component)
+\item 27 with zero ($K$ component)
 \item 2 with missing
 \item 539 without location
 \end{itemize}
@@ -54,6 +58,25 @@ data = data %>% clean_zeros %>% clean_non_located
 \end{itemize}
 \end{column}
 \end{columns}
+
+\end{frame}
+
+
+\begin{frame}
+\frametitle{Our goal}
+
+\begin{block}{Goal}
+Find a group structure in our data.
+\end{block}
+
+\begin{itemize}
+\item Revisit the piper diagram
+\item Model based clustering:
+\begin{itemize}
+\item Adjustment a mixture distribution
+\item Merging components
+\end{itemize}
+\end{itemize}
 
 \end{frame}
 
@@ -107,6 +130,32 @@ print(g_class, vp = vpb_)
 
 \end{frame}
 
+
+\begin{frame}
+\frametitle{Piper diagram: considerations}
+\begin{itemize}
+\item Piper diagram needs to amalgamate $Na$ and $K$,
+\item Data in mEq units,
+\item classification is sample independent (regions are fixed in advances),
+\item classification depends only on the relation of two component.
+\end{itemize}
+\end{frame}
+
+\begin{frame}
+\frametitle{Model based approach}
+\begin{enumerate}
+\item Represent our compositional data in coordinates with respect to an orthonormal basis.
+\item Gaussian mixture fitting:
+\begin{itemize}
+\item Decide the number of components,
+\item For each sample, calculate the posterior probabilities.
+\end{itemize}
+\item Merge the components hierarchically.
+\end{enumerate}
+
+\end{frame}
+
+
 <<>>=
 data.balances = data %>% balance %>% setNames(balance_nms)
 
@@ -124,8 +173,8 @@ g_bal = ggmap(map) +
 \frametitle{Compositional approach: Balances}
 
 \begin{columns}
-
 \begin{column}{0.6\textwidth}
+During thes work we have represented our sample using the following coordinates:
 \[
 \left\{
   \begin{array}{rcl}
@@ -146,7 +195,20 @@ g_bal
 @
 \end{column}
 \end{columns}
+\end{frame}
 
+\begin{frame}
+\frametitle{Number of components}
+\begin{itemize}
+\item BIC and AIC criteria assumptions fails for poorly defined gaussian components.
+\item We choose the number of components by using a bootstrap approach proposed by Efron and Tibshirani (1994).
+\item We get that between a mixture of $14$ and $15$ components there were not significant difference. 
+\item We assume our data follows a finite mixture
+\end{itemize}
+\[
+f(\;\cdot\;) = \pi_1 \phi(\;\cdot\; ; \m\mu_1, \m\Sigma_1) + \dots + \pi_{14} \phi(\;\cdot\; ; \m\mu_{14}, \m\Sigma_{14}),
+\]
+where $\phi$ is a gaussian distribution.
 \end{frame}
 
 <<include=F>>=
@@ -235,6 +297,157 @@ print(ggmap14, vp = vpb_)
 \end{column}
 \end{columns}
 
+\end{frame}
+
+\begin{frame}
+\frametitle{Merging components}
+\begin{itemize}
+\item We have a model for our sample.
+\item For each observation $x_i$, $1 \leq i \leq 4254$, we have the probability $\tau_{ik}$ to belong to one component $C_k$, $1 \leq k \leq 14$,
+\[
+\tau_{ik} = \frac{\pi_{k} \phi(x_i ; \m\mu_{k}, \m\Sigma_{14})}{f(x_i)}.
+\]
+\item Based on work presented in CDW'15 and IFCS'15, we propose to merge those components $C_a$, $C_b$, such that
+\[
+\frac{\sum_{i=1}^{4254} \tau_{ia} log(\tau_{ib}/\tau_{ia})}{\sum_{i=1}^{4254} \tau_{ia}}
+\]
+\end{itemize}
+\end{frame}
+
+<<include=F>>=
+HP  = hp.mod[[13]]
+hp_temp = lapply(HP, function(i) sprintf('%02d', i))
+
+df$g = ''
+for(i in names(hp_temp)){
+  df$g[df$g0 %in% hp_temp[[i]]] = i
+}
+
+lvls = df %>% filter(balance == '(Ca·Mg·Na·K)/(HCO3·SO4·Cl)') %>% 
+                  group_by(g) %>% 
+                  summarise( value.m = mean(value) ) %>% 
+                  arrange(value.m) %>% select(g) %>% .[[1]]
+data$g = factor(cluster_partition(mod@bestResult@proba, HP), levels = lvls)
+df$g = factor(df$g, lvls)
+
+ggmap13 <- ggmap(map) + 
+  geom_point(data = data, aes(x = lon, y = lat, col = g0), alpha=0.4) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), axis.text = element_blank()) + 
+  facet_wrap(~g, nrow=2) + theme(legend.position = 'none')
+
+gg_bal13 <- ggplot() + 
+  geom_point(data=df, 
+             aes(x=g, y=value, colour=g0), size=3) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=2, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90)) + 
+  scale_x_discrete(breaks=lvls, labels=ifelse(nchar(lvls) > 5, paste0(substr(lvls, 1, 4), '...'), lvls))
+@
+
+\begin{frame}
+\frametitle{Merging components: 13 components}
+
+\begin{columns}
+\begin{column}{\textwidth}
+<<fig.width=12, fig.height=8, warning=FALSE>>=
+grid.newpage()
+vpa_ <- viewport(width = 1, height = 0.6, x = 0.5, y = 0.3)
+print(gg_bal13, vp = vpa_)
+vpb_ <- viewport(width = 1, height = 0.4, x = 0.5, y = 0.8)
+print(ggmap13, vp = vpb_)
+@
+\end{column}
+\end{columns}
+
+\end{frame}
+
+<<>>=
+LVL = 12
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 11
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 10
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 9
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 8
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 7
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 6
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 5
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 4
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 3
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+<<>>=
+LVL = 2
+@
+
+<<child='level_descriptives.Rnw'>>=
+@
+
+\begin{frame}
+\frametitle{Conclusion and further work}
+\begin{itemize}
+\item We have point out some restrictions when Piper diagrams is used to analyse water geochemistry,
+\item We have adjusted a finite mixture to explain the water geochemistry of our sample,
+\item We have proposed an methodology to extract a hierarchy from a fixed parametric model,
+\item Some methodology need to be applied to overcome spacial dependecies.
+\end{itemize}
 \end{frame}
 
 \end{document}
