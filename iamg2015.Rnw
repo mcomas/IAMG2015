@@ -1,0 +1,240 @@
+\documentclass[10pt]{beamer}
+
+\usepackage[utf8]{inputenc}
+
+\title{Finite mixtures of distributions: \\ compositional model-based clustering}
+\subtitle{IAMG 2015, Freiberg}
+\author{Marc Comas-Cufí \and  Antonella Buccianti\inst{*} \and \\ Josep Antoni Martín-Fernández \and Glòria Mateu-Figueras}
+\institute{Universitat de Girona \and %
+           \inst{*} Università degli Studi di Firenze}
+\date{September 10, 2015}
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+<<echo=FALSE, include=FALSE>>=
+knitr::opts_chunk$set(comment=NA, echo=FALSE)
+library(ggmap)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(grid)
+source('R/plot_functions.R')
+load('data/iamg_data.RData')
+load('data/iamg_map.RData')
+source('functions.R')
+data = data %>% clean_zeros %>% clean_non_located
+@
+
+\begin{frame}
+\frametitle{Our data}
+
+\begin{columns}[T]
+\begin{column}{0.40\textwidth}
+\includegraphics[width=\textwidth]{tuscany.png}
+\end{column}
+\begin{column}{0.60\textwidth}
+\begin{itemize}
+\item $n_0=4804$ observations
+\item Variables: 
+\begin{itemize}
+\item Location,
+\item pH and Conductivity, and
+\item $HCO_3$, $Ca$, $Cl$, $Mg$, $K$, $Na$, $SO_4$.
+\end{itemize}
+\item Incompletness
+\begin{itemize}
+\item 27 with zero (K component)
+\item 2 with missing
+\item 539 without location
+\end{itemize}
+\item $n=4254$ observation
+\end{itemize}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+
+<<>>=
+d.meq <- data %>% compo %>% mgL_to_mmol %>% mmol_to_meq
+
+d.ca = d.meq %>% tern_ca %>% closure
+d.an = d.meq %>% tern_an %>% closure 
+
+facie = function(d.ca, d.an) {
+  res = rep(as.character(NA), nrow(d.ca))
+  res[d.ca$Na.K < 50 & d.an$HCO > 50] = 'Ca-HCO3 Type'
+  res[d.ca$Na.K > 50 & d.an$HCO < 50] = 'Na-Cl Type'
+  res[d.ca$Na.K < 50 & d.an$HCO < 50 & d.ca$Na.K + d.an$HCO < 50] = 'Ca-Cl Type'
+  res[d.ca$Na.K < 50 & d.an$HCO < 50 & d.ca$Na.K + d.an$HCO > 50] = 'Mixed Ca-Mg-Cl Type'
+  res[d.ca$Na.K > 50 & d.an$HCO > 50 & d.ca$Na.K + d.an$HCO > 150] = 'Na-HCO3 Type'
+  res[d.ca$Na.K > 50 & d.an$HCO > 50 & d.ca$Na.K + d.an$HCO < 150] = 'Mixed Ca-Na-HCO3 Type'
+  res
+}
+piper_data =  with(bind_cols(d.ca, d.an), transform_piper_data(Mg=Mg, Ca=Ca, Cl=Cl, SO4=SO4))
+data$facie = facie(d.ca, d.an)
+piper_data$facie = facie(d.ca, d.an)
+
+g2 <- ggplot_piper() + 
+  geom_point(data=piper_data %>% mutate(g = facie), 
+             aes(x=x,y=y, col=g), size=2) + theme(legend.position='none')
+g_class<-ggmap(map) + 
+  geom_point(data = data, aes(x = lon, y = lat, col=facie)) +
+  xlab(NULL) + ylab(NULL) + theme_bw() + 
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(), 
+        legend.position='none') + facet_wrap(~facie, ncol=2)
+@
+
+\begin{frame}
+\frametitle{Piper diagram}
+
+\begin{columns}
+\begin{column}{\textwidth}
+<<fig.width=10, fig.height=8, warning=FALSE>>=
+grid.newpage()
+vpa_ <- viewport(width =0.75, height = 0.75, x = 0.7, y = 0.5)
+print(g2, vp = vpa_)
+vpb_ <- viewport(width = 0.40, height = 0.8, x = 0.22, y = 0.5)
+print(g_class, vp = vpb_)
+@
+
+\end{column}
+\end{columns}
+
+\end{frame}
+
+<<>>=
+data.balances = data %>% balance %>% setNames(balance_nms)
+
+g_bal = ggmap(map) + 
+  geom_point(data = cbind(data %>% balance %>% setNames(balance_nms), data %>% select(lon, lat)) %>% 
+               gather(key=balance, value=Coordinate, -lon, -lat), 
+             aes(x = lon, y = lat, col = Coordinate)) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), 
+        axis.text = element_blank(),
+        legend.position='bottom') + facet_wrap(~balance, ncol=2) +
+  scale_colour_continuous( low="blue", high="red" )
+@
+\begin{frame}
+\frametitle{Compositional approach: Balances}
+
+\begin{columns}
+
+\begin{column}{0.6\textwidth}
+\[
+\left\{
+  \begin{array}{rcl}
+b_1 &=& \sqrt{\frac{4\cdot 3}{4+3}} \log\left(\frac{\sqrt[4]{Ca \cdot Mg \cdot Na \cdot K}}{\sqrt[3]{HCO_3 \cdot SO_4 \cdot Cl}}\right)\\
+b_2 &=& \sqrt{\frac{2\cdot 2}{2+2}} \log\left(\frac{\sqrt{Ca \cdot Mg}}{\sqrt{Na \cdot K}}\right)\\
+b_3 &=& \sqrt{\frac{1\cdot 1}{1+1}} \log\left(\frac{Ca}{Mg}\right)\\
+b_4 &=& \sqrt{\frac{1\cdot 1}{1+1}} \log\left(\frac{Na}{K}\right)\\
+b_5 &=& \sqrt{\frac{1\cdot 2}{1+2}} \log\left(\frac{HCO_3}{\sqrt{SO_4 \cdot Cl}}\right)\\
+b_6 &=& \sqrt{\frac{1\cdot 1}{1+1}} \log\left(\frac{SO_4}{Cl}\right)
+\end{array}
+\right.
+\]
+\end{column}
+
+\begin{column}{0.4\textwidth}
+<<fig.width=5.5, fig.height=8, warning=FALSE>>=
+g_bal
+@
+\end{column}
+\end{columns}
+
+\end{frame}
+
+<<include=F>>=
+xlog = function(x) x * log(x)
+l_lambda = list(
+  'entr' = function(v_tau, a, b) xlog(v_tau[a] + v_tau[b]) - xlog(v_tau[a]) - xlog(v_tau[b]),
+  'demp' = function(v_tau, a, b) if(which.max(v_tau) == b) 1 else 0,
+  'demp.mod' = function(v_tau, a, b) v_tau[b] * (v_tau[a] + v_tau[b])^-1,
+  'coda' = function(v_tau, a, b) log(v_tau[b] / v_tau[a]),
+  'coda.norm' = function(v_tau, a, b) -log(v_tau[b] / v_tau[a])^2,
+  'prop' = function(v_tau, a, b) v_tau[b] )
+
+# Weitghing functions
+l_omega = list(
+  'cnst' = function(v_tau, a) 1,
+  'prop' = function(v_tau, a) v_tau[a],
+  'dich' = function(v_tau, a) if(which.max(v_tau) == a) 1 else 0
+)
+library(mixpack)
+library(Rmixmod)
+fit = function(.data, .k, .seed) 
+  mixmodCluster(.data, nbCluster = .k, 
+                models = mixmodGaussianModel(listModels = 'Gaussian_pk_Lk_Ck'),
+                strategy = mixmodStrategy(seed=.seed, nbTry = 5))
+K = 14
+mod = fit(data.balances, K, 1)
+POST = mod@bestResult@proba
+POST[POST==0] = .Machine$double.xmin
+hp = get_hierarchical_partition(POST,
+                                omega = l_omega[['prop']],
+                                lambda = l_lambda[['coda.norm']])
+hp.mod = hp
+df = mod@bestResult@parameters@mean %>% data.frame %>% tbl_df %>% 
+  setNames(balance_nms) %>%
+  mutate(g0 = sprintf('%02d', 1:mod@bestResult@nbCluster)) %>% 
+  gather(key='balance', value='value', -g0)
+df.mean = df %>% group_by(balance) %>% summarise(value = mean(value))
+
+data$g0 = sprintf('%02d', mod@bestResult@partition) 
+@
+
+<<include=F>>=
+HP  = hp.mod[[14]]
+hp_temp = lapply(HP, function(i) sprintf('%02d', i))
+
+df$g = ''
+for(i in names(hp_temp)){
+  df$g[df$g0 %in% hp_temp[[i]]] = i
+}
+
+lvls = df %>% filter(balance == '(Ca·Mg·Na·K)/(HCO3·SO4·Cl)') %>% 
+                  group_by(g) %>% 
+                  summarise( value.m = mean(value) ) %>% 
+                  arrange(value.m) %>% select(g) %>% .[[1]]
+data$g = factor(cluster_partition(mod@bestResult@proba, HP), levels = lvls)
+df$g = factor(df$g, lvls)
+
+ggmap14 <- ggmap(map) + 
+  geom_point(data = data, aes(x = lon, y = lat, col = g0), alpha=0.4) +
+  xlab(NULL) + ylab(NULL) +
+  theme(axis.ticks = element_blank(), axis.text = element_blank()) + 
+  facet_wrap(~g, nrow=2) + theme(legend.position = 'none')
+
+gg_bal14 <- ggplot() + 
+  geom_point(data=df, 
+             aes(x=g, y=value, colour=g0), size=3) +
+  geom_hline(data=df.mean, aes(yintercept=value), col='blue') + 
+  facet_wrap(~balance, ncol=2, scale='free') + 
+  theme_bw() + theme(legend.position = 'none', 
+                     axis.text.x=element_text(angle=-90)) + 
+  scale_x_discrete(breaks=lvls, labels=ifelse(nchar(lvls) > 5, paste0(substr(lvls, 1, 4), '...'), lvls))
+@
+
+\begin{frame}
+\frametitle{Finite mixture approach}
+
+\begin{columns}
+\begin{column}{\textwidth}
+<<fig.width=12, fig.height=8, warning=FALSE>>=
+grid.newpage()
+vpa_ <- viewport(width = 1, height = 0.6, x = 0.5, y = 0.3)
+print(gg_bal14, vp = vpa_)
+vpb_ <- viewport(width = 1, height = 0.4, x = 0.5, y = 0.8)
+print(ggmap14, vp = vpb_)
+@
+\end{column}
+\end{columns}
+
+\end{frame}
+
+\end{document}
