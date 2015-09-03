@@ -31,7 +31,7 @@ gg_balLVL <- ggplot() +
 @
 
 \begin{frame}
-\frametitle{Merging components: \Sexpr{LVL} components}
+\frametitle{Merging mixture components: \Sexpr{LVL} clusters}
 
 \begin{columns}
 \begin{column}{\textwidth}

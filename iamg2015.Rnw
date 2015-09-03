@@ -50,11 +50,11 @@ data = data %>% clean_zeros %>% clean_non_located
 \end{itemize}
 \item Removed from the study:
 \begin{itemize}
-\item 27 with zero ($K$ component)
+\item 27 with zero (only in potassium)
 \item 2 with missing
 \item 539 without location
 \end{itemize}
-\item $n=4254$ observation
+\item $n=4254$ observations
 \end{itemize}
 \end{column}
 \end{columns}
@@ -66,15 +66,19 @@ data = data %>% clean_zeros %>% clean_non_located
 \frametitle{Our goal}
 
 \begin{block}{Goal}
-Find a group structure in our data.
+To find a group structure using only the chemical components ($HCO_3$, $Ca$, $Cl$, $Mg$, $K$, $Na$, $SO_4$).
 \end{block}
 
 \begin{itemize}
-\item Revisit the piper diagram
+\item Revisiting the piper diagram
 \item Model based clustering:
 \begin{itemize}
-\item Adjustment a mixture distribution
-\item Merging components
+\item Adjustment of a mixture distribution 
+
+(one mixture component $\leftrightarrow$ one cluster)
+\item Merging mixture components 
+
+(merged mixture components $\leftrightarrow$ one cluster)
 \end{itemize}
 \end{itemize}
 
@@ -113,7 +117,7 @@ g_class<-ggmap(map) +
 @
 
 \begin{frame}
-\frametitle{Piper diagram}
+\frametitle{Classical approach: Piper diagram}
 
 \begin{columns}
 \begin{column}{\textwidth}
@@ -134,23 +138,23 @@ print(g_class, vp = vpb_)
 \begin{frame}
 \frametitle{Piper diagram: considerations}
 \begin{itemize}
-\item Piper diagram needs to amalgamate $Na$ and $K$,
-\item Data in mEq units,
-\item classification is sample independent (regions are fixed in advances),
-\item classification depends only on the relation of two component.
+\item Piper diagram amalgamates $Na$ and $K$,
+\item data has to be in mEq units,
+\item classification is sample independent (regions are fixed in advance) and
+\item classification depends only on the relation of two chemical components.
 \end{itemize}
 \end{frame}
 
 \begin{frame}
 \frametitle{Model based approach}
 \begin{enumerate}
-\item Represent our compositional data in coordinates with respect to an orthonormal basis.
-\item Gaussian mixture fitting:
+\item Represent our chemical data in log-ratio coordinates with respect to an orthonormal basis.
+\item Fit a Gaussian mixture:
 \begin{itemize}
-\item Decide the number of components,
+\item Decide the number of mixture components,
 \item For each sample, calculate the posterior probabilities.
 \end{itemize}
-\item Merge the components hierarchically.
+\item Merge the mixture components hierarchically until obtaining one cluster.
 \end{enumerate}
 
 \end{frame}
@@ -170,11 +174,11 @@ g_bal = ggmap(map) +
   scale_colour_continuous( low="blue", high="red" )
 @
 \begin{frame}
-\frametitle{Compositional approach: Balances}
+\frametitle{Compositional approach}
 
 \begin{columns}
 \begin{column}{0.6\textwidth}
-During thes work we have represented our sample using the following coordinates:
+Using the information provided by the expert geologist the log-ratio coordinates (balances) were:
 \[
 \left\{
   \begin{array}{rcl}
@@ -187,6 +191,7 @@ b_6 &=& \sqrt{\frac{1\cdot 1}{1+1}} \log\left(\frac{SO_4}{Cl}\right)
 \end{array}
 \right.
 \]
+We follow the principle of working on log-ratio coodinates.
 \end{column}
 
 \begin{column}{0.4\textwidth}
@@ -200,15 +205,27 @@ g_bal
 \begin{frame}
 \frametitle{Number of components}
 \begin{itemize}
-\item BIC and AIC criteria assumptions fails for poorly defined gaussian components.
-\item We choose the number of components by using a bootstrap approach proposed by Efron and Tibshirani (1994).
-\item We get that between a mixture of $14$ and $15$ components there were not significant difference. 
+\item BIC and AIC fails because the gaussian component are poorly defined.
+\item We choose the number of components by using a bootstrap approach proposed by Efron and Tibshirani (1994). 
 \item We assume our data follows a finite mixture
 \end{itemize}
 \[
 f(\;\cdot\;) = \pi_1 \phi(\;\cdot\; ; \m\mu_1, \m\Sigma_1) + \dots + \pi_{14} \phi(\;\cdot\; ; \m\mu_{14}, \m\Sigma_{14}),
 \]
 where $\phi$ is a gaussian distribution.
+\end{frame}
+
+\begin{frame}[t]
+\frametitle{Finite mixture approach}
+\setbeamercovered{transparent}
+\begin{itemize}
+\item We have a model for our sample.
+\item For each observation $x_i$, $1 \leq i \leq 4254$, we have the probability $\tau_{ik}$ to belong to one mixture component $C_k$, $1 \leq k \leq 14$,
+\[
+\tau_{ik} = \frac{\pi_{k} \phi(x_i ; \m\mu_{k}, \m\Sigma_{k})}{f(x_i)}.
+\]
+\item $x_i$ is assigned to the mixture component $C_k$ such that $\tau_{ik}$, $1\leq k \leq 14$, maximum.
+\end{itemize}
 \end{frame}
 
 <<include=F>>=
@@ -299,18 +316,20 @@ print(ggmap14, vp = vpb_)
 
 \end{frame}
 
-\begin{frame}
-\frametitle{Merging components}
+\begin{frame}[t]
+\frametitle{Merging mixture components}
 \begin{itemize}
-\item We have a model for our sample.
-\item For each observation $x_i$, $1 \leq i \leq 4254$, we have the probability $\tau_{ik}$ to belong to one component $C_k$, $1 \leq k \leq 14$,
+\item For each observation $x_i$, $1 \leq i \leq 4254$, we have the probabilities 
 \[
-\tau_{ik} = \frac{\pi_{k} \phi(x_i ; \m\mu_{k}, \m\Sigma_{14})}{f(x_i)}.
+\left(\tau_{i1}, \dots, \tau_{i14}\right)
 \]
-\item Based on work presented in CDW'15 and IFCS'15, we propose to merge those components $C_a$, $C_b$, such that
+to belong to one mixture component.
+\item Based on work presented in CDW'15 and IFCS'15, we propose to merge those mixture components $C_a$, $C_b$, such that
 \[
 \frac{\sum_{i=1}^{4254} \tau_{ia} log(\tau_{ib}/\tau_{ia})}{\sum_{i=1}^{4254} \tau_{ia}}
 \]
+is minimum.
+\item When mixture components $C_a$ and $C_b$ are merged into $C_{a\cup b}$, the probability that $x_i$ belongs to $C_{a\cup b}$ is $\tau_{ia} + \tau_{ib}$.
 \end{itemize}
 \end{frame}
 
@@ -347,7 +366,7 @@ gg_bal13 <- ggplot() +
 @
 
 \begin{frame}
-\frametitle{Merging components: 13 components}
+\frametitle{Merging mixture components: 13 clusters}
 
 \begin{columns}
 \begin{column}{\textwidth}
@@ -441,12 +460,12 @@ LVL = 2
 @
 
 \begin{frame}
-\frametitle{Conclusion and further work}
+\frametitle{Conclusions and further work}
 \begin{itemize}
-\item We have point out some restrictions when Piper diagrams is used to analyse water geochemistry,
+\item We have point out some restrictions when Piper diagram is used to analyse water geochemistry,
 \item We have adjusted a finite mixture to explain the water geochemistry of our sample,
-\item We have proposed an methodology to extract a hierarchy from a fixed parametric model,
-\item Some methodology need to be applied to overcome spacial dependecies.
+\item We have proposed a methodology to extract a hierarchy from a fixed parametric model,
+\item Some methodology needs to be applied to take into account the spatial dependecies.
 \end{itemize}
 \end{frame}
 
